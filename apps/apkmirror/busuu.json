@@ -1,6 +1,7 @@
 {
-    "org": "busuu-learn-languages",
-    "name": "busuu-learn-speak-languages",
+    "org": "busuu",
+    "name": "busuu-learn-languages",
+    "release_prefix": "busuu-learn-speak-languages",
     "type": "APK", 
     "arch": "universal",
     "dpi": "120-640dpi",
