@@ -41,16 +41,25 @@ def get_download_link(version: str, app_name: str, config: dict, arch: str = Non
     # Extract build number if present (e.g., "32.30.0(1575420)" -> version="32.30.0", build="1575420")
     build_number = None
     build_format = None
+    
+    # Check for parentheses format: "32.30.0(1575420)"
     build_match = re.search(r'\((\d+)\)$', version)
     if build_match:
         build_number = build_match.group(1)
         build_format = 'parentheses'
         version = version[:build_match.start()]
     else:
-        # Try to fetch build number from APKMirror for this version
-        build_number, build_format = get_build_number_for_version(version, config)
-        if build_number:
-            logging.info(f"Found build number {build_number} for version {version} (format: {build_format})")
+        # Check for build suffix format: "6.6 build 002"
+        build_match = re.search(r'\s+build\s+(\d+)$', version, re.IGNORECASE)
+        if build_match:
+            build_number = build_match.group(1)
+            build_format = 'build_suffix'
+            version = version[:build_match.start()]
+        else:
+            # Try to fetch build number from APKMirror for this version
+            build_number, build_format = get_build_number_for_version(version, config)
+            if build_number:
+                logging.info(f"Found build number {build_number} for version {version} (format: {build_format})")
     
     version_parts = version.split('.')
     found_soup = None
