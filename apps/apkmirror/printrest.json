@@ -1,0 +1,10 @@
+{
+    "org": "pinterest",
+    "name": "pinterest",
+    "release_prefix": "",
+    "type": "APK", 
+    "arch": "universal",
+    "dpi": "nodpi",
+    "package" : "com.pinterest",
+    "version" : ""
+}
