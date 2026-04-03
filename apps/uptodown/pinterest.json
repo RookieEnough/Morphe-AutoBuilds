@@ -1,5 +1,6 @@
 {
     "name": "pinterest",
     "package" : "com.pinterest",
+    "type" : "XAPK",
     "version" : ""
 }
