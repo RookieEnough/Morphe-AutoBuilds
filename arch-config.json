@@ -5,6 +5,11 @@
     "arches": ["arm64-v8a", "armeabi-v7a"]
   },
   {
+    "app_name": "nomone",
+    "source": "morphe",
+    "arches": ["arm64-v8a", "armeabi-v7a"]
+  },
+  {
     "app_name": "google-photos",
     "source": "rookie",
     "arches": ["arm64-v8a", "armeabi-v7a"]
