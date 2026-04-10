@@ -5,7 +5,7 @@
     { "app_name": "youtube-music", "source": "morphe" },
     { "app_name": "reddit", "source": "morphe" },
     { "app_name": "x", "source": "piko" },
-    { "app_name": "instagram", "source": "piko-dev" },
+    { "app_name": "instagram", "source": "piko" },
     { "app_name": "printrest", "source": "adobo" },
     { "app_name": "soundcloud", "source": "hoo" },
     { "app_name": "google-photos", "source": "rookie" },
