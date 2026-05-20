@@ -5,6 +5,12 @@ env:
 
 on:
   workflow_dispatch:
+    inputs:
+      force_full_rebuild:
+        description: "Rebuild every app (ignore incremental check)"
+        type: boolean
+        required: false
+        default: false
   schedule:
     - cron: '0 6 * * *'  # Daily at 6 AM UTC
 
@@ -49,19 +55,53 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       has_updates: ${{ steps.check.outputs.has_updates }}
-    
+      build_matrix: ${{ steps.check.outputs.build_matrix }}
+      update_count: ${{ steps.check.outputs.update_count }}
+      total_count: ${{ steps.check.outputs.total_count }}
+      carry_count: ${{ steps.check.outputs.carry_count }}
+      incremental: ${{ steps.check.outputs.incremental }}
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-      
-      - name: Always Build
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run Incremental Update Check
         id: check
-        run: echo "has_updates=true" >> $GITHUB_OUTPUT
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORCE_FULL_REBUILD: ${{ inputs.force_full_rebuild || 'false' }}
+        run: |
+          python scripts/check_app_updates.py
+
+      - name: Show Plan Summary
+        run: |
+          echo "Total entries:   ${{ steps.check.outputs.total_count }}"
+          echo "Need rebuild:    ${{ steps.check.outputs.update_count }}"
+          echo "Carry over:      ${{ steps.check.outputs.carry_count }}"
+          echo "Incremental:     ${{ steps.check.outputs.incremental }}"
+
+      - name: Upload Plan Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-plan
+          path: |
+            build_matrix.json
+            carry_over.json
+            new_manifest.json
+          if-no-files-found: warn
+          retention-days: 1
 
   patch-apps:
-    name: Read Configuration 
+    name: Read Configuration
     needs: [check-updates, download-tools]
     runs-on: ubuntu-latest
+    if: needs.check-updates.outputs.has_updates == 'true'
     outputs:
       matrix: ${{ steps.read-matrix.outputs.matrix }}
 
@@ -69,21 +109,16 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Restore Cached Tools
-        uses: actions/cache@v4
-        with:
-          path: tools/
-          key: revanced-tools-${{ hashFiles('patch-config.json', 'arch-config.json') }}
-
-      - name: Read Patch Config
+      - name: Use Build Matrix from Check
         id: read-matrix
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const path = './patch-config.json';
-            const matrix = JSON.parse(fs.readFileSync(path, 'utf8')).patch_list;
-            core.setOutput("matrix", JSON.stringify(matrix));
+        run: |
+          MATRIX='${{ needs.check-updates.outputs.build_matrix }}'
+          if [ -z "$MATRIX" ] || [ "$MATRIX" = "null" ]; then
+            echo "Empty matrix from check; falling back to full patch-config.json"
+            MATRIX=$(jq -c '.patch_list' patch-config.json)
+          fi
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+          echo "Matrix: $MATRIX" | head -c 1000
 
   build-apps:
     name: Build Applications
@@ -124,43 +159,116 @@ jobs:
           sleep $((RANDOM % 30)).$((RANDOM % 100))
           
           python -m src
-      
+
+      - name: Record Build Outputs
+        if: always()
+        env:
+          APP_NAME: ${{ matrix.app_name }}
+          SOURCE: ${{ matrix.source }}
+        run: |
+          mkdir -p build_records
+          # Record every produced APK so manifest can map (app, source, arch) -> filename
+          for apk in *.apk; do
+            [ -e "$apk" ] || continue
+            APK_PATH="$apk" python scripts/record_build.py || true
+          done
+          echo "Records produced:"
+          ls -la build_records/ 2>/dev/null || echo "(no records)"
+
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: apk-${{ matrix.app_name }}-${{ matrix.source }}
           path: "*.apk"
 
+      - name: Upload Build Records
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-records-${{ matrix.app_name }}-${{ matrix.source }}
+          path: build_records/
+          if-no-files-found: ignore
+
   create-single-release:
     name: Create Single Release
-    needs: build-apps
+    needs: [check-updates, build-apps]
     runs-on: ubuntu-latest
-    if: always() 
+    if: always() && needs.check-updates.outputs.has_updates == 'true'
     permissions:
       contents: write
-    
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-      
+
+      - name: Download Build Plan
+        uses: actions/download-artifact@v4
+        with:
+          name: build-plan
+          path: ./build-plan
+        continue-on-error: true
+
       - name: Download All APK Artifacts
         uses: actions/download-artifact@v4
         with:
           path: ./all-apks
+          pattern: apk-*
           if-no-files-found: warn
+
+      - name: Download All Build Records
+        uses: actions/download-artifact@v4
+        with:
+          path: ./all-records
+          pattern: build-records-*
+        continue-on-error: true
+
+      - name: Carry Over Unchanged APKs From Previous Release
+        if: needs.check-updates.outputs.incremental == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          mkdir -p ./carry-apks
+          PLAN_FILE="./build-plan/carry_over.json"
+          if [ ! -f "$PLAN_FILE" ]; then
+            echo "No carry_over.json plan found; skipping carry-over."
+            exit 0
+          fi
+          CARRY_COUNT=$(jq 'length' "$PLAN_FILE")
+          echo "Carry-over plan has $CARRY_COUNT APK(s)."
+          if [ "$CARRY_COUNT" -eq 0 ]; then
+            echo "Nothing to carry over."
+            exit 0
+          fi
+          if ! gh release view latest >/dev/null 2>&1; then
+            echo "⚠️ No previous 'latest' release exists; cannot carry over. Continuing without carry-over."
+            exit 0
+          fi
+          # Download each carry-over APK individually so a single missing asset
+          # doesn't abort the entire job.
+          jq -r '.[].apk' "$PLAN_FILE" | while read -r apk_name; do
+            [ -z "$apk_name" ] && continue
+            echo "↩️  Carrying over: $apk_name"
+            if ! gh release download latest --pattern "$apk_name" --dir ./carry-apks --clobber 2>/dev/null; then
+              echo "   ⚠️  Could not download $apk_name from previous release (will be skipped)."
+            fi
+          done
+          echo "Carry-over APKs:"
+          ls -la ./carry-apks/ 2>/dev/null || true
 
       - name: Check if Any APKs Were Built
         id: check-apks
         run: |
-          # Count APK files
-          apk_count=$(find ./all-apks -name "*.apk" 2>/dev/null | wc -l)
-          echo "Found $apk_count APK(s)"
-          
-          if [ $apk_count -eq 0 ]; then
-            echo "❌ No APKs were built successfully"
+          built_count=$(find ./all-apks -name "*.apk" 2>/dev/null | wc -l)
+          carry_count=$(find ./carry-apks -name "*.apk" 2>/dev/null | wc -l || echo 0)
+          total_count=$((built_count + carry_count))
+          echo "Built APKs: $built_count, Carry-over APKs: $carry_count, Total: $total_count"
+
+          if [ $total_count -eq 0 ]; then
+            echo "❌ No APKs available (built or carried-over)"
             echo "skip_release=true" >> $GITHUB_OUTPUT
           else
-            echo "✅ $apk_count APK(s) ready for release"
+            echo "✅ $total_count APK(s) ready for release"
             echo "skip_release=false" >> $GITHUB_OUTPUT
           fi
       
@@ -183,17 +291,45 @@ jobs:
         if: steps.check-apks.outputs.skip_release == 'false'
         run: |
           mkdir -p ./release-apks
-          
-          # Copy all APKs to release folder
-          echo "📦 Collecting APKs..."
-          find ./all-apks -name "*.apk" -exec cp {} ./release-apks/ \;
-          
+
+          # Copy freshly built APKs
+          echo "📦 Collecting freshly built APKs..."
+          find ./all-apks -name "*.apk" -exec cp -n {} ./release-apks/ \; 2>/dev/null || true
+
+          # Copy carry-over APKs (don't overwrite if same name appeared in build)
+          if [ -d ./carry-apks ]; then
+            echo "📦 Collecting carry-over APKs..."
+            find ./carry-apks -name "*.apk" -exec cp -n {} ./release-apks/ \; 2>/dev/null || true
+          fi
+
           echo "📁 APKs ready for release:"
           ls -la ./release-apks/
-          
-          # Count again for display
+
           final_count=$(ls -1 ./release-apks/*.apk 2>/dev/null | wc -l || echo "0")
           echo "📊 Total APKs: $final_count"
+
+      - name: Build Final Manifest
+        if: steps.check-apks.outputs.skip_release == 'false'
+        run: |
+          echo "🧾 Building manifest.json from build-plan + build records..."
+          # The new_manifest.json (post-plan baseline) lives in the build-plan artifact
+          if [ -f ./build-plan/new_manifest.json ]; then
+            cp ./build-plan/new_manifest.json ./new_manifest.json
+          fi
+          # Flatten all per-build records into one directory
+          mkdir -p build_records
+          if [ -d ./all-records ]; then
+            find ./all-records -name "*.json" -exec cp {} build_records/ \; 2>/dev/null || true
+          fi
+          python scripts/merge_manifest.py || {
+            echo "⚠️ merge_manifest.py failed; continuing without manifest update."
+            rm -f manifest.json
+          }
+          if [ -f manifest.json ]; then
+            echo "✅ manifest.json built:"
+            jq '.entries | length' manifest.json || true
+            cp manifest.json ./release-apks/manifest.json
+          fi
       
       - name: Generate Release Notes
         if: steps.check-apks.outputs.skip_release == 'false'
@@ -274,24 +410,31 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "🚀 Creating new release with APKs..."
-          
+
           # Count APKs
           apk_count=$(ls -1 ./release-apks/*.apk 2>/dev/null | wc -l || echo "0")
-          
+
           if [ $apk_count -eq 0 ]; then
             echo "❌ No APKs found to release"
             exit 1
           fi
-          
+
           echo "📦 Releasing $apk_count APK(s)..."
-          
+
+          # Build the asset list: APKs + optional manifest.json
+          ASSETS=( ./release-apks/*.apk )
+          if [ -f ./release-apks/manifest.json ]; then
+            ASSETS+=( ./release-apks/manifest.json )
+            echo "📎 Including manifest.json"
+          fi
+
           # Create the release
           gh release create "latest" \
             --title "ReVanced APKs - $(date +'%Y-%m-%d %H:%M')" \
             --notes-file release_notes.md \
-            ./release-apks/*.apk \
+            "${ASSETS[@]}" \
             --latest
-          
+
           echo "✅ Release created successfully!"
       
       - name: Display Release URL
@@ -310,7 +453,7 @@ jobs:
 
   cleanup:
     name: Cleanup Workflow Runs
-    needs: build-apps
+    needs: [build-apps, create-single-release]
     runs-on: ubuntu-latest
     if: always()
     permissions:
