@@ -178,6 +178,7 @@ jobs:
           # Record every produced APK so manifest can map (app, source, arch) -> filename
           for apk in *.apk; do
             [ -e "$apk" ] || continue
+            # record_build.py now detects arch from filename automatically
             APK_PATH="$apk" python scripts/record_build.py || true
           done
           echo "Records produced:"
