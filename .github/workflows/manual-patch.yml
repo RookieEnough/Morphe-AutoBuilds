@@ -1,7 +1,7 @@
 name: Manual Patch and Update
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
 
 on:
   workflow_dispatch:
@@ -154,7 +154,7 @@ jobs:
           
           # 2. CREATE RELEASE NOTES
           cat > release_notes.md << EOF
-          # ReVanced APKs
+          # Morphe APKs
           
           ## 📱 Available Apps
           EOF
@@ -184,13 +184,13 @@ jobs:
             
             echo "📝 Updating release title and notes..."
             gh release edit latest \
-              --title "ReVanced APKs - $(date +'%Y-%m-%d %H:%M')" \
+              --title "Morphe APKs - $(date +'%Y-%m-%d %H:%M')" \
               --notes-file release_notes.md
               
           else
             echo "🚀 Creating new release..."
             gh release create "latest" \
-              --title "ReVanced APKs - $(date +'%Y-%m-%d %H:%M')" \
+              --title "Morphe APKs - $(date +'%Y-%m-%d %H:%M')" \
               --notes-file release_notes.md \
               *.apk \
               --latest
