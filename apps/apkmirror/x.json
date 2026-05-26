@@ -1,9 +1,10 @@
 {
     "org": "x-corp",
     "name": "twitter",
-    "type": "APK", 
-    "arch": "",
-    "dpi": "",
+    "release_prefix": "twitter",
+    "type": "BUNDLE", 
+    "arch": "arm64-v8a",
+    "dpi": "120-620dpi",
     "package" : "com.twitter.android",
     "version" : ""
 }
