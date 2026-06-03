@@ -133,7 +133,9 @@ def fetch_repo_signature(user: str, repo: str, tag: str, provider: str = "github
 
     try:
         if provider == "gitlab":
-            sig = _fetch_gitlab_signature(user, tag)
+            # For GitLab we store the project path in the `repo` slot (see
+            # get_source_signature), e.g. "Group/Subgroup/Project".
+            sig = _fetch_gitlab_signature(repo, tag)
         elif provider == "codeberg":
             sig = _fetch_codeberg_signature(user, repo, tag)
         else:
