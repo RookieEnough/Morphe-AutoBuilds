@@ -61,6 +61,7 @@ jobs:
       update_count: ${{ steps.check.outputs.update_count }}
       total_count: ${{ steps.check.outputs.total_count }}
       carry_count: ${{ steps.check.outputs.carry_count }}
+      stale_count: ${{ steps.check.outputs.stale_count }}
       incremental: ${{ steps.check.outputs.incremental }}
 
     steps:
@@ -98,6 +99,7 @@ jobs:
           echo "Total entries:   ${{ steps.check.outputs.total_count }}"
           echo "Need rebuild:    ${{ steps.check.outputs.update_count }}"
           echo "Carry over:      ${{ steps.check.outputs.carry_count }}"
+          echo "Stale assets:    ${{ steps.check.outputs.stale_count }}"
           echo "Incremental:     ${{ steps.check.outputs.incremental }}"
 
       - name: Upload Plan Artifacts
@@ -108,6 +110,7 @@ jobs:
             build_matrix.json
             carry_over.json
             new_manifest.json
+            stale_assets.json
           if-no-files-found: warn
           retention-days: 1
 
@@ -138,6 +141,7 @@ jobs:
     name: Build Applications
     needs: patch-apps
     runs-on: ubuntu-latest
+    if: needs.patch-apps.outputs.matrix != '[]' && needs.patch-apps.outputs.matrix != ''
     permissions:
       contents: write
     strategy:
@@ -239,17 +243,20 @@ jobs:
           pattern: build-records-*
         continue-on-error: true
 
-      - name: Check if Any APKs Were Built
+      - name: Check Release Work
         id: check-apks
         run: |
           built_count=$(find ./all-apks -name "*.apk" 2>/dev/null | wc -l)
+          stale_count='${{ needs.check-updates.outputs.stale_count }}'
+          stale_count=${stale_count:-0}
           echo "Built APKs: $built_count"
+          echo "Stale APK assets: $stale_count"
 
-          if [ "$built_count" -eq 0 ]; then
-            echo "❌ No rebuilt APKs available"
+          if [ "$built_count" -eq 0 ] && [ "$stale_count" -eq 0 ]; then
+            echo "❌ No rebuilt APKs or stale release assets available"
             echo "skip_release=true" >> $GITHUB_OUTPUT
           else
-            echo "✅ $built_count rebuilt APK(s) ready for release"
+            echo "✅ Release work detected"
             echo "skip_release=false" >> $GITHUB_OUTPUT
           fi
       
@@ -289,6 +296,23 @@ jobs:
             cp manifest.json ./release-apks/manifest.json
           fi
 
+      - name: Build Desired Release Asset List
+        if: steps.check-apks.outputs.skip_release == 'false'
+        run: |
+          if [ -f ./release-apks/manifest.json ]; then
+            jq -r '.entries[]?.apk // empty' ./release-apks/manifest.json \
+              | sed '/^$/d' \
+              | sort -u > desired_release_assets.txt
+            echo "manifest.json" >> desired_release_assets.txt
+            sort -u -o desired_release_assets.txt desired_release_assets.txt
+
+            echo "📋 Desired release assets:"
+            cat desired_release_assets.txt
+          else
+            echo "⚠️ No manifest available; stale release asset cleanup will be skipped."
+            rm -f desired_release_assets.txt
+          fi
+
       - name: Validate GitHub Auth
         if: steps.check-apks.outputs.skip_release == 'false'
         env:
@@ -320,22 +344,26 @@ jobs:
         run: |
           echo "📝 Generating release notes..."
 
-          if [ "${{ steps.check-release.outputs.release_exists }}" = "true" ]; then
-            gh release view latest --json assets --jq '.assets[].name' > current_assets.txt
+          if [ -f desired_release_assets.txt ]; then
+            cp desired_release_assets.txt release_assets.txt
           else
-            : > current_assets.txt
+            if [ "${{ steps.check-release.outputs.release_exists }}" = "true" ]; then
+              gh release view latest --json assets --jq '.assets[].name' > current_assets.txt
+            else
+              : > current_assets.txt
+            fi
+
+            for apk in ./release-apks/*.apk; do
+              [ -f "$apk" ] || continue
+              basename "$apk" >> current_assets.txt
+            done
+
+            if [ -f ./release-apks/manifest.json ]; then
+              echo "manifest.json" >> current_assets.txt
+            fi
+
+            sort -u current_assets.txt > release_assets.txt
           fi
-
-          for apk in ./release-apks/*.apk; do
-            [ -f "$apk" ] || continue
-            basename "$apk" >> current_assets.txt
-          done
-
-          if [ -f ./release-apks/manifest.json ]; then
-            echo "manifest.json" >> current_assets.txt
-          fi
-
-          sort -u current_assets.txt > release_assets.txt
 
           cat > release_notes.md << 'EOF'
           # Morphe APKs - Auto Built
@@ -383,15 +411,19 @@ jobs:
           # Count APKs
           apk_count=$(ls -1 ./release-apks/*.apk 2>/dev/null | wc -l || echo "0")
 
-          if [ $apk_count -eq 0 ]; then
-            echo "❌ No APKs found to release"
+          if [ "$apk_count" -eq 0 ] && [ ! -f ./release-apks/manifest.json ]; then
+            echo "❌ No APKs or manifest found to release"
             exit 1
           fi
 
           echo "📦 Releasing $apk_count APK(s)..."
 
           # Build the asset list: APKs + optional manifest.json
-          ASSETS=( ./release-apks/*.apk )
+          ASSETS=()
+          for apk in ./release-apks/*.apk; do
+            [ -f "$apk" ] || continue
+            ASSETS+=( "$apk" )
+          done
           if [ -f ./release-apks/manifest.json ]; then
             ASSETS+=( ./release-apks/manifest.json )
             echo "📎 Including manifest.json"
@@ -399,23 +431,41 @@ jobs:
 
           if [ "${{ steps.check-release.outputs.release_exists }}" = "true" ]; then
             echo "⬆️ Uploading rebuilt assets in place and refreshing release metadata..."
+
+            if [ -f desired_release_assets.txt ]; then
+              gh release view latest --json assets --jq '.assets[].name' > current_release_assets.txt
+              while read -r filename; do
+                [ -n "$filename" ] || continue
+                if [[ "$filename" == *.apk ]] && ! grep -Fqx -- "$filename" desired_release_assets.txt; then
+                  echo "🗑️ Deleting stale APK asset $filename from latest release..."
+                  gh release delete-asset latest "$filename" --yes || true
+                fi
+              done < current_release_assets.txt
+            fi
             
             # Delete old APK versions that are being replaced
             for apk in "${ASSETS[@]}"; do
               if [[ "$apk" == *.apk ]]; then
                 filename=$(basename "$apk")
                 echo "🗑️ Deleting old version of $filename from latest release..."
-                gh release delete latest "$filename" --yes || true
+                gh release delete-asset latest "$filename" --yes || true
               fi
             done
             
             # Upload new APKs and manifest
-            gh release upload latest "${ASSETS[@]}" --clobber
+            if [ ${#ASSETS[@]} -gt 0 ]; then
+              gh release upload latest "${ASSETS[@]}" --clobber
+            fi
             gh release edit latest \
               --title "Morphe APKs - $(date +'%Y-%m-%d %H:%M')" \
               --notes-file release_notes.md
           else
             echo "🆕 Creating 'latest' release..."
+            if [ ${#ASSETS[@]} -eq 0 ]; then
+              echo "❌ No assets available to create release"
+              exit 1
+            fi
+
             gh release create "latest" \
               --title "Morphe APKs - $(date +'%Y-%m-%d %H:%M')" \
               --notes-file release_notes.md \

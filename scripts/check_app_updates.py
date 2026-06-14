@@ -15,6 +15,7 @@ Strategy:
    - File: build_matrix.json    (matrix entries that need rebuild).
    - File: carry_over.json      (existing APK names to re-upload unchanged).
    - File: new_manifest.json    (manifest to upload with the new release).
+   - File: stale_assets.json    (release APK assets no longer in the manifest).
 
 Force full rebuild: env FORCE_FULL_REBUILD=true (also: any app missing from the
 old manifest is rebuilt automatically).
@@ -317,8 +318,13 @@ def _get_repo_owner_name() -> Optional[Tuple[str, str]]:
 
 
 def fetch_existing_manifest() -> Optional[dict]:
-    rc, _, err = run_gh(["release", "download", RELEASE_TAG,
-                         "--pattern", MANIFEST_NAME, "--clobber"])
+    args = ["release", "download", RELEASE_TAG, "--pattern", MANIFEST_NAME, "--clobber"]
+    repo = _get_repo_owner_name()
+    if repo:
+        owner, name = repo
+        args.extend(["--repo", f"{owner}/{name}"])
+
+    rc, _, err = run_gh(args)
     if rc != 0:
         msg = err.strip()[:120]
         logging.info(f"No existing '{MANIFEST_NAME}' on '{RELEASE_TAG}' ({msg})")
@@ -423,9 +429,9 @@ def _recover_apk_from_release(app: str, arch: str, existing_apks: List[str]) -> 
 
 
 def plan_incremental(full_matrix: List[dict], old_manifest: Optional[dict],
-                     existing_apks: List[str]) -> Tuple[List[dict], List[str], dict]:
+                     existing_apks: List[str]) -> Tuple[List[dict], List[str], dict, List[str]]:
     """Decide which entries need rebuilding.
-    Returns (build_matrix, carry_over_apks, new_manifest_entries)."""
+    Returns (build_matrix, carry_over_apks, new_manifest_entries, stale_apks)."""
     old_entries = (old_manifest or {}).get("entries", {}) if isinstance(old_manifest, dict) else {}
     existing_apk_set = set(existing_apks)
 
@@ -525,7 +531,19 @@ def plan_incremental(full_matrix: List[dict], old_manifest: Optional[dict],
         else:
             logging.info(f"  drop carry {apk}: its (app,source) is rebuilding")
 
-    return deduped, filtered_carry, new_entries
+    desired_apks = {
+        e.get("apk", "")
+        for e in new_entries.values()
+        if e.get("apk", "")
+    }
+    stale_apks = sorted(
+        n for n in existing_apks
+        if n.endswith(".apk") and n not in desired_apks
+    )
+    for apk in stale_apks:
+        logging.info(f"  stale release asset: {apk}")
+
+    return deduped, filtered_carry, new_entries, stale_apks
 
 
 # ---------------------------------------------------------------------------
@@ -537,6 +555,7 @@ def emit_full_rebuild(reason: str) -> None:
     full = build_full_matrix()
     Path("build_matrix.json").write_text(json.dumps(full), encoding="utf-8")
     Path("carry_over.json").write_text(json.dumps([]), encoding="utf-8")
+    Path("stale_assets.json").write_text(json.dumps([]), encoding="utf-8")
     # Empty manifest -> next run will treat everything as 'new-entry' until a
     # successful build writes a fresh manifest.
     Path("new_manifest.json").write_text(
@@ -546,6 +565,7 @@ def emit_full_rebuild(reason: str) -> None:
     write_gh_output("update_count", str(len(full)))
     write_gh_output("total_count", str(len(full)))
     write_gh_output("carry_count", "0")
+    write_gh_output("stale_count", "0")
     write_gh_output("incremental", "false")
 
 
@@ -569,25 +589,28 @@ def main() -> int:
             emit_full_rebuild("no manifest in existing release (first incremental run)")
             return 0
 
-        build_mx, carry_over, new_entries = plan_incremental(
+        build_mx, carry_over, new_entries, stale_apks = plan_incremental(
             full, old_manifest, existing_apks)
 
         Path("build_matrix.json").write_text(json.dumps(build_mx), encoding="utf-8")
         Path("carry_over.json").write_text(json.dumps(carry_over), encoding="utf-8")
         Path("new_manifest.json").write_text(
             json.dumps({"entries": new_entries}, indent=2), encoding="utf-8")
+        Path("stale_assets.json").write_text(json.dumps(stale_apks), encoding="utf-8")
 
         write_gh_output("build_matrix", json.dumps(build_mx))
-        write_gh_output("has_updates", "true" if build_mx else "false")
+        write_gh_output("has_updates", "true" if build_mx or stale_apks else "false")
         write_gh_output("update_count", str(len(build_mx)))
         write_gh_output("total_count", str(len(full)))
         write_gh_output("carry_count", str(len(carry_over)))
+        write_gh_output("stale_count", str(len(stale_apks)))
         write_gh_output("incremental", "true")
 
         logging.info("=" * 60)
         logging.info(f"  Total entries:     {len(full)}")
         logging.info(f"  Need rebuild:      {len(build_mx)}")
         logging.info(f"  Carry over:        {len(carry_over)}")
+        logging.info(f"  Stale APK assets:  {len(stale_apks)}")
         logging.info("=" * 60)
 
         return 0
