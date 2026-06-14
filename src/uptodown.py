@@ -97,46 +97,56 @@ def generate_possible_uptodown_names(config: dict) -> list:
     """Generate all possible Uptodown URL patterns from config data"""
     app_name = config.get('name', '')
     package = config.get('package', '')
-    
-    possible_names = set()
+
+    possible_names = []
+    seen_names = set()
+
+    def add_name(name: str) -> None:
+        if not name or len(name) <= 1:
+            return
+        normalized = name.lower()
+        if normalized in seen_names:
+            return
+        seen_names.add(normalized)
+        possible_names.append(normalized)
     
     # 1. Basic variations
-    possible_names.add(app_name)
-    possible_names.add(app_name.replace('-', ''))
-    possible_names.add(app_name.replace('-plus', 'plus'))
-    possible_names.add(app_name.replace('-', '_'))
+    add_name(app_name)
+    add_name(app_name.replace('-', ''))
+    add_name(app_name.replace('-plus', 'plus'))
+    add_name(app_name.replace('-', '_'))
     
     # 2. Package name variations
     package_dash = package.replace('.', '-')
-    possible_names.add(package_dash)
+    add_name(package_dash)
     
     # Common TLD patterns (com-, org-, net-)
     if package.startswith('com.'):
-        possible_names.add(package_dash)
-        possible_names.add(package_dash.replace('com-', ''))
+        add_name(package_dash)
+        add_name(package_dash.replace('com-', ''))
         
         # com-package variations
         parts = package.split('.')
         if len(parts) >= 2:
             # com-appname
-            possible_names.add(f"com-{parts[1]}")
+            add_name(f"com-{parts[1]}")
             # com-appname-lastpart
-            possible_names.add(f"com-{parts[1]}-{parts[-1]}")
+            add_name(f"com-{parts[1]}-{parts[-1]}")
             # appname only
-            possible_names.add(parts[1])
-            possible_names.add(parts[-1])
+            add_name(parts[1])
+            add_name(parts[-1])
             
             # For multi-part packages like com.disney.disneyplus
             if len(parts) >= 3:
-                possible_names.add(f"com-{parts[1]}{parts[2]}")
-                possible_names.add(f"com-{parts[1]}{parts[2]}-mea")
-                possible_names.add(f"com-{'-'.join(parts[1:])}")
+                add_name(f"com-{parts[1]}{parts[2]}")
+                add_name(f"com-{parts[1]}{parts[2]}-mea")
+                add_name(f"com-{'-'.join(parts[1:])}")
     
     # 3. Common suffixes (these cover 99% of cases)
     suffixes = ['', '-android', '-mobile', '-mea', '-plus', '-pro', '-lite', '-hd', '-apk']
     for suffix in suffixes:
-        possible_names.add(app_name + suffix)
-        possible_names.add(package_dash + suffix)
+        add_name(app_name + suffix)
+        add_name(package_dash + suffix)
     
     # 4. Company/app combinations
     # Extract company name from package (first meaningful part after TLD)
@@ -144,25 +154,20 @@ def generate_possible_uptodown_names(config: dict) -> list:
     if len(parts) >= 2:
         company = parts[1]
         app_basename = parts[-1]
-        possible_names.add(f"{company}-{app_basename}")
-        possible_names.add(f"{company}-{app_name}")
+        add_name(f"{company}-{app_basename}")
+        add_name(f"{company}-{app_name}")
         
         # For apps like Adobe
         if 'adobe' in package.lower():
-            possible_names.add(f"adobe-{app_basename}")
-            possible_names.add(f"adobe-{app_basename}-mobile")
+            add_name(f"adobe-{app_basename}")
+            add_name(f"adobe-{app_basename}-mobile")
     
     # 5. Remove common words and try variations
     clean_name = app_name
     for word in ['plus', 'pro', 'lite', 'free', 'paid', 'mod']:
         if word in clean_name:
             clean = clean_name.replace(f'-{word}', '').replace(word, '')
-            possible_names.add(clean)
-            possible_names.add(f"{clean}-{word}")
-    
-    # 6. All lowercase
-    lowercase_names = {name.lower() for name in possible_names}
-    possible_names.update(lowercase_names)
-    
-    # Clean up: remove None/empty, deduplicate
-    return [name for name in possible_names if name and len(name) > 1]
+            add_name(clean)
+            add_name(f"{clean}-{word}")
+
+    return possible_names

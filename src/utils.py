@@ -88,20 +88,33 @@ def find_file(files: list[Path], prefix: str = None, suffix: str = None, contain
     return None
 
 def find_apksigner() -> str | None:
-    sdk_root = Path("/usr/local/lib/android/sdk")
-    build_tools_dir = sdk_root / "build-tools"
-
-    if not build_tools_dir.exists():
-        logging.error(f"No build-tools found at: {build_tools_dir}")
-        return []
-
-    versions = sorted(build_tools_dir.iterdir(), reverse=True)
-    for version_dir in versions:
-        apksigner_path = version_dir / "apksigner"
+    for candidate in os.environ.get("PATH", "").split(os.pathsep):
+        apksigner_path = Path(candidate) / "apksigner"
         if apksigner_path.exists() and apksigner_path.is_file():
             return str(apksigner_path)
 
-    logging.error("No apksigner found in build-tools")
+    sdk_roots = [
+        os.environ.get("ANDROID_HOME"),
+        os.environ.get("ANDROID_SDK_ROOT"),
+        "/usr/local/lib/android/sdk",
+        "/opt/android-sdk",
+        str(Path.home() / "Android" / "Sdk"),
+    ]
+
+    for sdk_root_value in sdk_roots:
+        if not sdk_root_value:
+            continue
+        build_tools_dir = Path(sdk_root_value) / "build-tools"
+        if not build_tools_dir.exists():
+            continue
+
+        versions = sorted(build_tools_dir.iterdir(), reverse=True)
+        for version_dir in versions:
+            apksigner_path = version_dir / "apksigner"
+            if apksigner_path.exists() and apksigner_path.is_file():
+                return str(apksigner_path)
+
+    logging.error("No apksigner found in PATH or Android SDK build-tools")
     return None
 
 def run_process(
