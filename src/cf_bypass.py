@@ -100,7 +100,7 @@ async def _solve_challenge_async(url: str, timeout: int = 30) -> dict:
         )
         page = await browser.get(url)
 
-        # Poll until Cloudflare clears (title changes from "Just a moment...")
+        # Poll until Cloudflare clears (title doesn't contain challenge indicators)
         elapsed = 0
         while elapsed < timeout:
             await asyncio.sleep(0.5)
@@ -109,7 +109,9 @@ async def _solve_challenge_async(url: str, timeout: int = 30) -> dict:
                 title = await page.evaluate("document.title")
             except Exception:
                 title = ""
-            if title and "Just a moment" not in title:
+            
+            title_lower = title.lower() if title else ""
+            if title_lower and not any(term in title_lower for term in ["just a moment", "attention required", "cloudflare", "turnstile"]):
                 logging.info(f"Cloudflare cleared after {elapsed:.1f}s — title: {title}")
                 break
         else:
@@ -196,10 +198,11 @@ def is_cf_challenge(response) -> bool:
     # Header set by Cloudflare when it serves a managed challenge page
     if response.headers.get("cf-mitigated") == "challenge":
         return True
-    # Fallback: check body for the classic "Just a moment..." page
+    # Fallback: check body for the classic Turnstile/Challenge indicators
     try:
-        snippet = response.text[:500] if hasattr(response, "text") else ""
-        if "Just a moment" in snippet:
+        snippet = response.text[:1000] if hasattr(response, "text") else ""
+        snippet_lower = snippet.lower()
+        if "just a moment" in snippet_lower or "attention required" in snippet_lower or "cloudflare" in snippet_lower:
             return True
     except Exception:
         pass
