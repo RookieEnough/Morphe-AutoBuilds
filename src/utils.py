@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import shutil
 import time
 import logging
 from typing import List, Optional
@@ -88,20 +89,32 @@ def find_file(files: list[Path], prefix: str = None, suffix: str = None, contain
     return None
 
 def find_apksigner() -> str | None:
-    sdk_root = Path("/usr/local/lib/android/sdk")
-    build_tools_dir = sdk_root / "build-tools"
+    on_path = shutil.which("apksigner")
+    if on_path:
+        return on_path
 
-    if not build_tools_dir.exists():
-        logging.error(f"No build-tools found at: {build_tools_dir}")
-        return None
+    sdk_roots = [
+        "/usr/local/lib/android/sdk",  # GitHub Actions runner default
+        os.environ.get("ANDROID_HOME"),
+        os.environ.get("ANDROID_SDK_ROOT"),
+    ]
 
-    versions = sorted(build_tools_dir.iterdir(), reverse=True)
-    for version_dir in versions:
-        apksigner_path = version_dir / "apksigner"
-        if apksigner_path.exists() and apksigner_path.is_file():
-            return str(apksigner_path)
+    for root in sdk_roots:
+        if not root:
+            continue
+        build_tools_dir = Path(root) / "build-tools"
+        if not build_tools_dir.exists():
+            continue
+        versions = sorted(build_tools_dir.iterdir(), reverse=True)
+        for version_dir in versions:
+            apksigner_path = version_dir / "apksigner"
+            if apksigner_path.exists() and apksigner_path.is_file():
+                return str(apksigner_path)
 
-    logging.error("No apksigner found in build-tools")
+    logging.error(
+        "No apksigner found. Install Android SDK build-tools and either put "
+        "apksigner on PATH or set ANDROID_HOME/ANDROID_SDK_ROOT."
+    )
     return None
 
 def run_process(
