@@ -1,6 +1,7 @@
 {
     "org": "tiktok-pte-ltd",
     "name": "tik-tok-including-musical-ly",
+    "release_prefix": "tiktok",
     "type": "APK", 
     "arch": "arm64-v8a + armeabi-v7a",
     "dpi": "nodpi",
