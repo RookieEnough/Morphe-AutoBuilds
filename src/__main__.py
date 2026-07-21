@@ -72,6 +72,8 @@ def run_build(app_name: str, source: str, arch: str = "universal") -> str:
             # Fallback to any Morphe CLI
             cli = utils.find_file(download_files, contains="morphe", suffix=".jar")
         
+        if not cli:
+            cli = utils.find_file(download_files, suffix=".jar")
         patches = utils.find_file(download_files, contains="patches", suffix=".mpp")
         if not patches:
             # Fallback to any .mpp file
@@ -354,9 +356,9 @@ def main():
             arch_config = json.load(f)
         
         # Find arches for this app
-        arches = ["universal"]  # default
+        arches = [(getenv("ARCH") or "universal").strip()]
         for config in arch_config:
-            if config["app_name"] == app_name and config["source"] == source:
+            if not getenv("ARCH") and config["app_name"] == app_name and config["source"] == source:
                 arches = config["arches"]
                 break
         
