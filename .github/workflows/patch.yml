@@ -18,6 +18,7 @@ jobs:
   download-tools:
     name: Download Morphe Tools
     runs-on: ubuntu-latest
+    if: ${{ false }}
     outputs:
       cache-key: ${{ steps.cache-key.outputs.cache-key }}
     steps:
@@ -53,7 +54,6 @@ jobs:
 
   check-updates:
     name: Check for Updates
-    needs: download-tools
     runs-on: ubuntu-latest
     outputs:
       has_updates: ${{ steps.check.outputs.has_updates }}
@@ -113,7 +113,6 @@ jobs:
 
   patch-apps:
     name: Read Configuration
-    needs: [check-updates, download-tools]
     runs-on: ubuntu-latest
     if: needs.check-updates.outputs.has_updates == 'true'
     outputs:
