@@ -1,4 +1,4 @@
-+ Enable DCIM folders backup control
 + Change package name 
 
 - Spoof build info
+- Enable DCIM folders backup control
