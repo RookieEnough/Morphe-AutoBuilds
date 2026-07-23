@@ -1,6 +1,7 @@
 {
     "org": "pinterest",
-    "name": "pinterest",
+    "name": "pinterest-one-destination-for-a-world-of-inspiration",
+    "release_prefix": "pinterest",
     "type": "APK", 
     "arch": "universal",
     "dpi": "nodpi",
