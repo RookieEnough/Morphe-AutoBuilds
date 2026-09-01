@@ -98,7 +98,7 @@
     { "app_name": "gamehub", "source": "liaralabs" },
     { "app_name": "dialer", "source": "taknok" },
     { "app_name": "windscribe", "source": "rushiranpise-dev" },
-    { "app_name": "x", "source": "piko-newx" },
+    { "app_name": "x", "source": "piko" },
     { "app_name": "gboard", "source": "jasonwu1994" }
   ]
 }
