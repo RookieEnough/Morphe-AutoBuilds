@@ -4,7 +4,7 @@
     "release_prefix": "twitter",
     "type": "BUNDLE", 
     "arch": "",
-    "dpi": "120-620dpi",
+    "dpi": "120-640dpi",
     "package" : "com.twitter.android",
     "version" : ""
 }
