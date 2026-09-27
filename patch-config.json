@@ -102,6 +102,7 @@
     { "app_name": "x-new", "source": "piko-newx" },
     { "app_name": "gboard", "source": "jasonwu1994" },
     { "app_name": "google-photos", "source": "akash-sriram" },
-    { "app_name": "google-maps", "source": "bearinmindcat" }
+    { "app_name": "google-maps", "source": "bearinmindcat" },
+    { "app_name": "gboard", "source": "3r01" }
   ]
 }

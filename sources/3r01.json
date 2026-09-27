@@ -1,15 +1,15 @@
 [
     {
-      "name": "ungoogle-patches"
+      "name": "morphe-3r01-patches"
     },
     {
       "user": "MorpheApp",
       "repo": "morphe-cli",
       "tag": "latest"
-   },
+    },
     {
-      "user": "bearinmindcat",
-      "repo": "morphe-patches",
+      "user": "3r01",
+      "repo": "Gboard-patches",
       "tag": "latest"
     }
 ]
