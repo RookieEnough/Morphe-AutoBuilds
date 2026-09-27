@@ -99,7 +99,6 @@
     { "app_name": "dialer", "source": "taknok" },
     { "app_name": "windscribe", "source": "rushiranpise-dev" },
     { "app_name": "x", "source": "piko" },
-    { "app_name": "x-new", "source": "piko-newx" },
     { "app_name": "gboard", "source": "jasonwu1994" },
     { "app_name": "google-photos", "source": "akash-sriram" },
     { "app_name": "google-maps", "source": "bearinmindcat" },
