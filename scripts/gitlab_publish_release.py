@@ -175,9 +175,27 @@ def main() -> int:
             title, notes = build_release_notes(list(urls))
         existing = {l["name"]: l for l in gitlab_api.list_asset_links(args.tag)}
         gitlab_api.ensure_release(args.tag, title, notes, ref)
+        # NOTE: ensure_release() calls move_tag() which deletes/recreates the tag.
+        # In GitLab, this wipes the release's asset links. Recreate links for
+        # all previously-existing apps (from package files) plus new uploads.
+        _restored = 0
+        for old_name in sorted(existing.keys()):
+            if old_name in urls:
+                continue  # Will be (re)created below as fresh upload
+            if not old_name.endswith(".apk"):
+                continue
+            url = gitlab_api.package_file_url(old_name)
+            try:
+                r = gitlab_api.api("POST", f"/releases/{args.tag}/assets/links",
+                                    json={"name": old_name, "url": url, "link_type": "package"})
+                if r.status_code in (200, 201):
+                    _restored += 1
+            except Exception:
+                pass
+        if _restored:
+            logging.info(f"Restored {_restored} asset links wiped by tag move")
         for name, url in urls.items():
-            if name in existing:
-                gitlab_api.delete_asset_link(args.tag, existing[name]["id"])
+            # Old link was wiped by move_tag; just create the new one
             r = gitlab_api.api("POST", f"/releases/{args.tag}/assets/links",
                                json={"name": name, "url": url, "link_type": "package"})
             r.raise_for_status()
