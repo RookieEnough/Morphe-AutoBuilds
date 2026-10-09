@@ -22,4 +22,10 @@ jobs:
         env:
           GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
           GITLAB_PROJECT_ID: "87288318"
-        run: python scripts/gitlab_publish_release.py --rebuild-links --tag latest
+        run: |
+          if [ -z "$GITLAB_TOKEN" ]; then
+            echo "ERROR: GITLAB_TOKEN is empty!"
+            exit 1
+          fi
+          echo "Token is set (length: ${#GITLAB_TOKEN})"
+          python -u scripts/gitlab_publish_release.py --rebuild-links --tag latest 2>&1
