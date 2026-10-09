@@ -83,9 +83,16 @@ def rebuild_all_links(tag: str) -> int:
         if name in existing:
             continue
         url = gitlab_api.package_file_url(name)
-        r = gitlab_api.api("POST", f"/releases/{tag}/assets/links",
-                            json={"name": name, "url": url, "link_type": "package"})
-        r.raise_for_status()
+        try:
+            r = gitlab_api.api("POST", f"/releases/{tag}/assets/links",
+                                json={"name": name, "url": url, "link_type": "package"})
+            r.raise_for_status()
+        except Exception as e:
+            # Link may already exist (duplicate filename in package); skip
+            logging.warning(f"Could not create link for {name}: {e}")
+            existing[name] = True  # Mark as handled to avoid retry loop
+            continue
+        existing[name] = True  # Track newly created to handle duplicates
         created += 1
         logging.info(f"Created asset link: {name}")
 
