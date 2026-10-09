@@ -71,32 +71,37 @@ def rebuild_all_links(tag: str) -> int:
     apk_files = [f for f in pkg_files if f.get("file_name", "").endswith(".apk")]
     logging.info(f"Found {len(apk_files)} APKs in package registry")
 
-    existing = {l["name"]: l for l in gitlab_api.list_asset_links(tag)}
-    logging.info(f"Found {len(existing)} existing asset links")
-
+    # IMPORTANT: ensure_release() calls move_tag() which deletes/recreates the
+    # tag. In GitLab, this wipes the release's asset links. So we must ensure
+    # the release FIRST, then (re)create all links. Do NOT rely on a pre-wipe
+    # listing of existing links.
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
     gitlab_api.ensure_release(tag, f"Morphe APKs - {now}", "", ref)
 
+    # After the tag move, existing links are gone. Create fresh for all APKs.
+    # Use a set to deduplicate filenames in the package registry.
+    seen = set()
     created = 0
+    skipped = 0
     for pf in apk_files:
         name = pf["file_name"]
-        if name in existing:
+        if name in seen:
+            skipped += 1
             continue
+        seen.add(name)
         url = gitlab_api.package_file_url(name)
         try:
             r = gitlab_api.api("POST", f"/releases/{tag}/assets/links",
                                 json={"name": name, "url": url, "link_type": "package"})
             r.raise_for_status()
         except Exception as e:
-            # Link may already exist (duplicate filename in package); skip
             logging.warning(f"Could not create link for {name}: {e}")
-            existing[name] = True  # Mark as handled to avoid retry loop
             continue
-        existing[name] = True  # Track newly created to handle duplicates
         created += 1
-        logging.info(f"Created asset link: {name}")
+        if created % 20 == 0:
+            logging.info(f"Created {created} links so far...")
 
-    logging.info(f"Rebuild complete: {created} links created, {len(existing)} already existed.")
+    logging.info(f"Rebuild complete: {created} links created, {skipped} duplicates skipped.")
     return 0
 
 
