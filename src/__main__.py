@@ -59,6 +59,10 @@ def _unpatched_build_reason(output: str | None, downloaded_version: str) -> str 
     downloaded = utils.normalize_version(_version_without_build(downloaded_version))
     for match in _FILTERING_PATCHES.finditer(output):
         package, filtered = match.group(1), match.group(2).strip()
+        # The patch CLI truncates long versions with a trailing '...' in its
+        # 'Filtering patches' line (e.g. v18.0.3.954559732-release-arm64-v8a...).
+        # Drop it so the version comparison below is not a false mismatch.
+        filtered = filtered.rstrip('.')
         if utils.normalize_version(_version_without_build(filtered)) != downloaded:
             return (
                 f"Patch CLI filtered {package} v{filtered}, "
