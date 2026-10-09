@@ -207,20 +207,34 @@ def ensure_release(tag: str, name: str, description: str, ref: str) -> Dict[str,
     return r.json()
 
 
-def list_asset_links(tag: str) -> List[Dict[str, Any]]:
+def list_asset_links(tag: str, retries: int = 3) -> List[Dict[str, Any]]:
     # The /releases/{tag}/assets/links endpoint is broken (returns []).
     # Get links from the release object instead, which includes them.
-    try:
-        r = api("GET", f"/releases/{tag}")
-        if r.status_code == 404:
-            return []
-        r.raise_for_status()
-        release = r.json()
-        links = release.get("assets", {}).get("links", [])
-        if links:
-            return links
-    except Exception:
-        pass
+    # GitLab's API has consistency lag: right after a release is updated,
+    # GET /releases/{tag} may return stale data with 0 links. Retry with
+    # backoff before falling back, to avoid acting on incomplete data.
+    for attempt in range(retries):
+        try:
+            r = api("GET", f"/releases/{tag}")
+            if r.status_code == 404:
+                return []
+            r.raise_for_status()
+            release = r.json()
+            links = release.get("assets", {}).get("links", [])
+            if links:
+                return links
+            # Empty links: might be consistency lag, retry unless last attempt
+            if attempt < retries - 1:
+                _log.warning(
+                    f"Got 0 asset links for '{tag}' (attempt {attempt + 1}/{retries}), "
+                    f"retrying after delay (possible API consistency lag)"
+                )
+                time.sleep(2 * (attempt + 1))
+        except Exception as e:
+            if attempt < retries - 1:
+                _log.warning(f"list_asset_links attempt {attempt + 1} failed: {e}, retrying")
+                time.sleep(2 * (attempt + 1))
+            pass
     # Fallback to the direct endpoint
     links = []
     page = 1
