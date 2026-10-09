@@ -95,7 +95,7 @@ def rebuild_all_links(tag: str) -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--apks-dir", required=True)
+    ap.add_argument("--apks-dir", required=False, default=None)
     ap.add_argument("--tag", default="latest")
     ap.add_argument("--merge", action="store_true",
                     help="Add/replace only these assets, keep existing links "
@@ -108,6 +108,8 @@ def main() -> int:
     if args.rebuild_links:
         return rebuild_all_links(args.tag)
 
+    if not args.apks_dir:
+        ap.error("--apks-dir is required unless --rebuild-links is used")
     apks_dir = Path(args.apks_dir)
     apks = sorted(apks_dir.glob("*.apk"))
     manifest = apks_dir / "manifest.json"
