@@ -1,0 +1,9 @@
+{
+    "org": "google-inc",
+    "name": "maps",
+    "type": "BUNDLE",
+    "arch": "arm64-v8a",
+    "dpi": "480-640dpi",
+    "package": "com.google.android.apps.maps",
+    "version": ""
+}

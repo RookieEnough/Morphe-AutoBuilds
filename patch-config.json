@@ -349,12 +349,28 @@
       "source": "rushiranpise-dev"
     },
     {
+      "app_name": "x",
+      "source": "piko"
+    },
+    {
       "app_name": "x-new",
       "source": "piko-newx"
     },
     {
       "app_name": "gboard",
       "source": "jasonwu1994"
+    },
+    {
+      "app_name": "gboard",
+      "source": "3r01"
+    },
+    {
+      "app_name": "google-photos",
+      "source": "akash-sriram"
+    },
+    {
+      "app_name": "google-maps",
+      "source": "bearinmindcat"
     },
     {
       "app_name": "facebook",

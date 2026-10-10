@@ -94,7 +94,7 @@ jobs:
           # and the APK list from the GitLab release instead of GitHub's.
           MORPHE_PLATFORM: gitlab
           GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
-          GITLAB_PROJECT_ID: "87288318"
+          GITLAB_PROJECT_ID: "87288318" # Could use ${{ secrets.GITHUB_PROJECTID }} instead
         run: |
           python scripts/check_app_updates.py
 
@@ -331,11 +331,22 @@ jobs:
         if: steps.check-apks.outputs.skip_release == 'false'
         run: pip install requests
 
-      - name: Publish to GitLab Releases
-        if: steps.check-apks.outputs.skip_release == 'false'
+      - name: Check GitLab token
+        id: gitlab-token
         env:
           GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
-          GITLAB_PROJECT_ID: "87288318"
+        run: |
+          if [ -n "$GITLAB_TOKEN" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish to GitLab Releases
+        if: steps.check-apks.outputs.skip_release == 'false' && steps.gitlab-token.outputs.available == 'true'
+        env:
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+          GITLAB_PROJECT_ID: "87288318" # Could use ${{ secrets.GITHUB_PROJECTID }} instead
         run: |
           if [ -z "$GITLAB_TOKEN" ]; then
             echo "GITLAB_TOKEN secret is not set on this repo."

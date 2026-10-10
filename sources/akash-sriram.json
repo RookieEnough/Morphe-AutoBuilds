@@ -1,0 +1,15 @@
+[
+    {
+      "name": "morphe-google-photos"
+    },
+    {
+      "user": "MorpheApp",
+      "repo": "morphe-cli",
+      "tag": "latest"
+   },
+    {
+      "user": "Akash-Sriram",
+      "repo": "morphe-google-photos",
+      "tag": "latest"
+    }
+]
