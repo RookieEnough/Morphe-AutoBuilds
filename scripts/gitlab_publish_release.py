@@ -260,7 +260,13 @@ def main() -> int:
         final_names = [l["name"] for l in gitlab_api.list_asset_links(args.tag)]
         if final_names:
             mtitle, mnotes = build_release_notes(final_names)
-            gitlab_api.ensure_release(args.tag, mtitle, mnotes, ref)
+            # Do NOT call ensure_release() here: it calls move_tag(), which
+            # deletes/recreates the tag and wipes all release asset links in
+            # GitLab. Update the notes directly so the tag stays untouched.
+            r = gitlab_api.api("PUT", f"/releases/{args.tag}",
+                               json={"name": mtitle, "description": mnotes})
+            r.raise_for_status()
+            logging.info("Refreshed release notes (tag untouched)")
 
     logging.info("GitLab release publish complete.")
     return 0
