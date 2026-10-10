@@ -1,0 +1,2 @@
+- Remove AI News
+- Remove Ads

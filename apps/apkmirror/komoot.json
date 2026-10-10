@@ -1,9 +1,10 @@
 {
     "org": "komoot-gmbh",
     "name": "komoot-cycling-hiking-mountain-biking-maps",
-    "type": "APK",
+    "release_prefix": "komoot-hike-bike-run",
+    "type": "BUNDLE",
     "arch": "universal",
-    "dpi": "120-640dpi",
+    "dpi": "480-640dpi",
     "package": "de.komoot.android",
     "version": ""
 }

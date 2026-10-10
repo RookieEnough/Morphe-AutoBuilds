@@ -1,0 +1,2 @@
++ Disable Pairip license check
+- Enable Pro

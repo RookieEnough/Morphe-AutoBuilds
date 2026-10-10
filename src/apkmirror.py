@@ -7,6 +7,7 @@ from src import session
 
 base_url = "https://www.apkmirror.com"
 _blocked_by_cloudflare = False
+_use_trawl = False
 
 
 class ApkMirrorBlocked(RuntimeError):
@@ -30,37 +31,88 @@ def _app_slug_candidates(config: dict) -> list[str]:
 
 
 def _cf_get(url, **kwargs):
-    """Fetch without trying to defeat Cloudflare on a GitHub-hosted runner."""
-    global _blocked_by_cloudflare
+    """Fetch with Cloudflare handling via the CI browser service.
+
+    When APKMirror serves a Turnstile challenge, route the request through
+    trawl (the browser-rendering service already in CI). Once a challenge is
+    seen, stay in trawl mode for the rest of the build instead of abandoning
+    APKMirror: cookies from the rendered page are reused, and trawl is used
+    again if a later request gets challenged.
+    """
+    global _blocked_by_cloudflare, _use_trawl
     if _blocked_by_cloudflare:
         raise ApkMirrorBlocked("APKMirror blocked this runner earlier in the build")
 
     kwargs.setdefault("timeout", 20)
-    response = session.get(url, **kwargs)
-    if response.status_code == 403:
-        body = response.text[:2000].lower()
-        if response.headers.get("cf-mitigated") == "challenge" or "cloudflare" in body:
-            # CI jobs provide Trawl, the same browser-rendering service used by
-            # rvb.  It supplies ordinary page HTML/cookies; if it is absent or
-            # cannot obtain a page, preserve the existing provider fallback.
-            try:
-                from src import trawl
 
-                rendered = trawl.fetch(url)
-                if rendered:
-                    for name, value in rendered.cookies.items():
-                        session.cookies.set(name, value, domain=".apkmirror.com")
-                    logging.info("APKMirror page obtained through the CI browser service")
-                    return rendered
-            except Exception as exc:
-                logging.debug("APKMirror browser-service fallback failed: %s", exc)
-            _blocked_by_cloudflare = True
-            logging.warning(
-                "APKMirror served a Cloudflare challenge; skipping APKMirror "
-                "for this build instead of launching a browser."
-            )
-            raise ApkMirrorBlocked("APKMirror Cloudflare challenge")
+    def _via_trawl():
+        """Render the page through trawl and sync cookies to the session."""
+        from src import trawl
+
+        rendered = trawl.fetch(url)
+        if rendered:
+            for name, value in rendered.cookies.items():
+                session.cookies.set(name, value, domain=".apkmirror.com")
+            logging.info("APKMirror page obtained through the CI browser service")
+            return rendered
+        return None
+
+    def _is_challenge(response) -> bool:
+        if response.status_code != 403:
+            return False
+        body = response.text[:2000].lower()
+        return response.headers.get("cf-mitigated") == "challenge" or "cloudflare" in body
+
+    # If a previous request needed trawl, try direct first (cookies may hold),
+    # then fall back to trawl without giving up on APKMirror.
+    if _use_trawl:
+        response = session.get(url, **kwargs)
+        if not _is_challenge(response):
+            return response
+        try:
+            rendered = _via_trawl()
+            if rendered:
+                return rendered
+        except Exception as exc:
+            logging.debug("APKMirror browser-service retry failed: %s", exc)
+
+    response = session.get(url, **kwargs)
+    if _is_challenge(response):
+        # CI jobs provide Trawl, the same browser-rendering service used by
+        # rvb.  It supplies ordinary page HTML/cookies; if it is absent or
+        # cannot obtain a page, preserve the existing provider fallback.
+        try:
+            rendered = _via_trawl()
+            if rendered:
+                _use_trawl = True
+                return rendered
+        except Exception as exc:
+            logging.debug("APKMirror browser-service fallback failed: %s", exc)
+        _blocked_by_cloudflare = True
+        logging.warning(
+            "APKMirror served a Cloudflare challenge; skipping APKMirror "
+            "for this build instead of launching a browser."
+        )
+        raise ApkMirrorBlocked("APKMirror Cloudflare challenge")
     return response
+
+def extract_base_version(version: str) -> str:
+    """Extract base version from CLI version string which may include variant.
+    
+    E.g., "18.0.3.954559732-release-arm64-v8a" -> "18.0.3.954559732"
+    """
+    import re
+    # Match version number at start, stop before -release, -beta, -alpha, or arch markers
+    m = re.match(r'^(\d[\d.]*\d)(?:-(?:release|beta|alpha|arm64|armeabi|universal|x86|noarch|dpi).*)?$', version, re.IGNORECASE)
+    if m:
+        return m.group(1)
+    # Fallback: split on known variant markers
+    for marker in ['-release-', '-beta-', '-alpha-', '-arm64', '-armeabi', '-universal-', '-x86', '-noarch']:
+        if marker in version.lower():
+            idx = version.lower().find(marker)
+            return version[:idx]
+    return version
+
 
 def get_build_number_for_version(version: str, config: dict) -> tuple[str | None, str]:
     """Fetch build number for a specific version from APKMirror.
@@ -201,6 +253,10 @@ def _scrape_release_url_from_soup(soup, version: str, config: dict, build_number
                 # Check version pattern properly bounded
                 ver_pattern = re.escape(current_ver_dash)
                 if re.search(rf'(?:^|[/-]){ver_pattern}(?:[/-]|$)', href):
+                    # Skip excluded variants (e.g., beta when config says exclude_variant=beta)
+                    exclude = config.get('exclude_variant', '')
+                    if exclude and exclude.lower() in href.lower():
+                        continue
                     priority = 0 if href.rstrip('/').endswith('-release') else 1
                     candidates.append((priority, link['href']))
             
@@ -264,6 +320,12 @@ def get_download_link(version: str, app_name: str, config: dict, arch: str = Non
     if not version:
         logging.error(f"No version provided for {app_name}")
         return None
+    # Strip variant suffix from CLI version string (e.g., "18.0.3.954559732-release-arm64-v8a" -> "18.0.3.954559732")
+    # The variant info is used for filtering, not URL construction.
+    original_version = version
+    version = extract_base_version(version)
+    if version != original_version:
+        logging.info(f"Stripped variant from version: {original_version} -> {version}")
         
     target_arch = arch if (arch and arch != "universal") else config.get('arch', 'universal')
     

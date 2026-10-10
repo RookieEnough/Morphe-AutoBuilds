@@ -1,9 +1,10 @@
 {
-  "org": "peter-stoll",
-  "name": "niagara-launcher-fresh-clean",
-  "type": "BUNDLE",
+  "org": "mellowdrop-studio",
+  "name": "niagara-launcher-🔹-fresh-clean",
+  "type": "APK",
   "arch": "universal",
-  "dpi": "120-640dpi",
+  "dpi": "nodpi",
   "package": "bitpit.launcher",
-  "version": ""
+  "version": "",
+  "release_prefix": "niagara-launcher-‡-home-screen"
 }

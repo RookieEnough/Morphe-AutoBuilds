@@ -1,9 +1,10 @@
 {
-  "org": "ticktick",
-  "name": "ticktick",
-  "type": "APK",
+  "org": "ticktick-limited",
+  "name": "ticktick-to-do-list-with-reminder-day-planner",
+  "release_prefix": "ticktickto-do-list-calendar",
+  "type": "BUNDLE",
   "arch": "universal",
-  "dpi": "nodpi",
+  "dpi": "120-640dpi",
   "package": "com.ticktick.task",
   "version": ""
 }

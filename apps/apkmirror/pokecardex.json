@@ -1,9 +1,9 @@
 {
-  "org": "pokecardex",
+  "org": "numelek",
   "name": "pokecardex",
-  "type": "APK",
-  "arch": "universal",
-  "dpi": "nodpi",
+  "type": "BUNDLE",
+  "arch": "arm64-v8a + armeabi-v7a + x86_64",
+  "dpi": "120, 160, 213, 240, 320, 480, 640dpi",
   "package": "com.pokecardex.mobile",
   "version": ""
 }

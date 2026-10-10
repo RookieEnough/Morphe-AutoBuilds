@@ -1,0 +1,15 @@
+[
+    {
+        "name": "devanced"
+    },
+    {
+        "repo": "morphe-cli",
+        "tag": "latest",
+        "user": "MorpheApp"
+    },
+    {
+        "repo": "De-Vanced",
+        "tag": "prerelease",
+        "user": "RookieEnough"
+    }
+]

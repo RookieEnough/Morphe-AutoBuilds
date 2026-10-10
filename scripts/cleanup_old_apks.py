@@ -57,7 +57,12 @@ VERSION_MARKER = re.compile(r"-v\d[\d.()+\-]*\.apk$", re.IGNORECASE)
 
 def gh_release_assets(release: str) -> List[dict]:
     """Return asset dicts (with 'name' + 'id') currently attached to the release.
-    Only APK assets are returned."""
+    Only APK assets are returned.
+
+    Raises RuntimeError if the asset list cannot be retrieved: silently
+    returning an empty list would make the caller believe there is nothing to
+    clean up, letting superseded APKs accumulate forever.
+    """
     try:
         result = subprocess.run(
             ["gh", "release", "view", release, "--json", "assets"],
@@ -67,8 +72,7 @@ def gh_release_assets(release: str) -> List[dict]:
         return [a for a in assets if isinstance(a, dict)
                 and str(a.get("name", "")).endswith(".apk")]
     except Exception as e:
-        print(f"⚠️  could not list release assets: {e}", file=sys.stderr)
-        return []
+        raise RuntimeError(f"could not list release assets: {e}")
 
 
 def identity_prefix(apk_name: str) -> str:
@@ -163,7 +167,13 @@ def main() -> int:
     args = parser.parse_args()
 
     keep = load_keep_set(Path(args.keep_file))
-    assets = gh_release_assets(args.release)  # list of {name, id, ...} dicts
+    try:
+        assets = gh_release_assets(args.release)  # list of {name, id, ...} dicts
+    except RuntimeError as e:
+        print(f"❌ {e}", file=sys.stderr)
+        print("Refusing to continue: cannot verify which assets are superseded.",
+              file=sys.stderr)
+        return 1
 
     if not assets:
         print("No existing APK assets to clean up.")
@@ -203,6 +213,10 @@ def main() -> int:
 
     action = "would delete" if args.dry_run else "deleted"
     print(f"Done. {action} {len(to_delete) if args.dry_run else deleted} superseded asset(s).")
+    if not args.dry_run and deleted != len(to_delete):
+        print(f"❌ {len(to_delete) - deleted} asset(s) could not be deleted; "
+              f"superseded APKs remain in the release.", file=sys.stderr)
+        return 1
     return 0
 
 

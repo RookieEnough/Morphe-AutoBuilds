@@ -13,14 +13,15 @@ from urllib.parse import parse_qs, unquote, urljoin, urlparse
 import requests as plain_requests
 from bs4 import BeautifulSoup
 
-from src import session, utils
+from src import session, utils, flaresolverr
 
 BASE_URL = "https://apkcombo.com"
 HEADERS = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131 Safari/537.36"}
 
 
 def _page(package: str, suffix: str = ""):
-    return session.get(f"{BASE_URL}/search/{package}/download{suffix}", headers=HEADERS, timeout=25)
+    resp = flaresolverr.get_with_bypass(f"{BASE_URL}/search/{package}/download{suffix}", session=session, headers=HEADERS, timeout=25)
+    return resp if resp else session.get(f"{BASE_URL}/search/{package}/download{suffix}", headers=HEADERS, timeout=25)
 
 
 def get_latest_version(app_name: str, config: dict) -> str | None:

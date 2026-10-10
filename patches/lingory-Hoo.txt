@@ -1,0 +1,2 @@
+- Block Permissions Request
+- Enable Premium

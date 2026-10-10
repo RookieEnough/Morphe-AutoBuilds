@@ -1,9 +1,0 @@
-{
-  "org": "teuida-inc",
-  "name": "teuida-learn-speak-korean",
-  "type": "BUNDLE",
-  "arch": "universal",
-  "dpi": "120-640dpi",
-  "package": "net.teuida.teuida",
-  "version": ""
-}

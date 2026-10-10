@@ -1,9 +1,9 @@
 {
-  "org": "park4night-com",
+  "org": "appmobiledition",
   "name": "park4night-motorhome-camper",
-  "type": "BUNDLE",
-  "arch": "universal",
-  "dpi": "120-640dpi",
+  "type": "APK",
+  "arch": "arm64-v8a + armeabi-v7a + x86 + x86_64",
+  "dpi": "nodpi",
   "package": "fr.tramb.park4night",
   "version": ""
 }

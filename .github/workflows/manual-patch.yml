@@ -40,10 +40,10 @@ jobs:
   manual-patch:
     runs-on: ubuntu-latest
     services:
-      trawl:
-        image: ghcr.io/germondai/trawl:latest
+      flaresolverr:
+        image: ghcr.io/flaresolverr/flaresolverr:latest
         ports:
-          - 8191:8191
+          - 8192:8191
         options: --shm-size=1gb
     permissions:
       contents: write
@@ -60,15 +60,9 @@ jobs:
             config_file="$dir/${{ inputs.app_name }}.json"
             if [ -f "$config_file" ]; then
               echo "Updating $config_file with version ${{ inputs.version }}"
-              # Update JSON with specific version
-              python -c "
-              import json, sys, os
-              with open('$config_file', 'r') as f:
-                  config = json.load(f)
-              config['version'] = '${{ inputs.version }}'
-              with open('$config_file', 'w') as f:
-                  json.dump(config, f, indent=2)
-              "
+              # Update JSON with specific version (single line to avoid
+              # indentation issues inside python -c)
+              python3 -c "import json; p='$config_file'; c=json.load(open(p)); c['version']='${{ inputs.version }}'; json.dump(c, open(p, 'w'), indent=2)"
               echo "Updated: $config_file"
               break
             fi
@@ -90,13 +84,25 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
       
+      - name: Wait for FlareSolverr
+        run: |
+          echo "Waiting for FlareSolverr to be ready..."
+          for i in $(seq 1 30); do
+            if curl -s http://localhost:8192/ > /dev/null 2>&1; then
+              echo "FlareSolverr is ready."
+              break
+            fi
+            echo "Waiting... ($i/30)"
+            sleep 5
+          done
+
       - name: Build APK
         env:
           APP_NAME: ${{ inputs.app_name }}
           SOURCE: ${{ inputs.source }}
           ARCH: ${{ inputs.architecture }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TRAWL_URL: http://localhost:8191
+          FLARESOLVERR_URL: http://localhost:8192/v1
         run: |
           echo "🔧 Building ${{ inputs.app_name }} with ${{ inputs.source }} for ${{ inputs.architecture }} architecture..."
           python -m src
@@ -130,115 +136,32 @@ jobs:
           name: manual-apk-${{ inputs.app_name }}-${{ inputs.architecture }}
           path: "*.apk"
       
-      - name: Check Existing Release
+      - name: Install Publisher Dependencies
         if: ${{ inputs.replace_in_release == true }}
-        id: check-release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          if gh release view latest >/dev/null 2>&1; then
-            echo "✅ Release 'latest' exists"
-            echo "release_exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "❌ Release 'latest' does not exist"
-            echo "release_exists=false" >> $GITHUB_OUTPUT
-          fi
-      
-      - name: Update Release
+        run: pip install requests
+
+      - name: Publish to GitLab Releases
         if: ${{ inputs.replace_in_release == true }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+          GITLAB_PROJECT_ID: "87288318"
         run: |
-          echo "🔄 Updating release efficiently..."
-          
-          # 1. GENERATE FILE LIST FOR NOTES
-          # We fetch the list of names via API so the release notes remain accurate
-          # without needing to download the actual heavy APK files.
-          if [ "${{ steps.check-release.outputs.release_exists }}" == "true" ]; then
-            gh release view latest --json assets --jq '.assets[].name' > current_assets.txt
-          else
-            touch current_assets.txt
+          if [ -z "$GITLAB_TOKEN" ]; then
+            echo "GITLAB_TOKEN secret is not set on this repo."
+            exit 1
           fi
-          
-          # Add the new APK name(s) to the text file
-          for apk in *.apk; do
-            echo "$apk" >> current_assets.txt
-          done
-          
-          # 2. CREATE RELEASE NOTES
-          cat > release_notes.md << EOF
-          # Morphe APKs
-          
-          ## 📱 Available Apps
-          EOF
-          
-          # Sort and use 'unique' to remove duplicates in the text list
-          sort -u current_assets.txt | while read filename; do
-            echo "- $filename" >> release_notes.md
-          done
-          
-          cat >> release_notes.md << EOF
-          
-          ---
-          
-          **Last Update:** $(date)
-          **Updated App:** ${{ inputs.app_name }}
-          **Architecture:** ${{ inputs.architecture }}
-          **Source:** ${{ inputs.source }}
-          
-          Auto-updates daily at 6 AM UTC.
-          EOF
-          
-          # 3. PERFORM UPDATE (CLOBBER) OR CREATE
-          if [ "${{ steps.check-release.outputs.release_exists }}" == "true" ]; then
-            echo "⬆️ Uploading new assets (clobbering existing)..."
+          mkdir -p ./release-apks
+          cp -f *.apk ./release-apks/ 2>/dev/null || true
+          python scripts/gitlab_publish_release.py \
+            --apks-dir ./release-apks \
+            --merge
 
-            # Delete superseded older-version APKs for this app/arch before upload.
-            # --clobber only overwrites exact filenames; since APK names embed the
-            # version, the old version (e.g. v2.4.0) would otherwise remain next
-            # to the new v2.5.0. cleanup_old_apks.py removes any release APK that
-            # shares a {app}-{arch}- prefix with a freshly built APK but has a
-            # different version.
-            : > keep_apks.txt
-            for apk in *.apk; do
-              [ -f "$apk" ] || continue
-              echo "$apk" >> keep_apks.txt
-            done
-            python scripts/cleanup_old_apks.py --release latest --keep-file keep_apks.txt || \
-              echo "⚠️  cleanup_old_apks.py failed; continuing with clobber upload"
-
-            # --clobber overwrites the file if it exists, adds it if it doesn't
-            gh release upload latest *.apk --clobber
-
-            echo "📝 Updating release title and notes..."
-            gh release edit latest \
-              --title "Morphe APKs - $(date +'%Y-%m-%d %H:%M')" \
-              --notes-file release_notes.md
-              
-          else
-            echo "🚀 Creating new release..."
-            gh release create "latest" \
-              --title "Morphe APKs - $(date +'%Y-%m-%d %H:%M')" \
-              --notes-file release_notes.md \
-              *.apk \
-              --latest
-          fi
-          
-          echo "✅ Release updated successfully!"
-      
-      - name: Show Download Links
+      - name: Publish Summary
         if: ${{ inputs.replace_in_release == true }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          release_url=$(gh release view latest --json url --jq .url)
-          echo "🔗 Updated Release URL: $release_url"
-          echo ""
-          echo "📦 Direct APK links:"
-          for apk in *.apk; do
-            echo "  - $release_url/download/$apk"
-          done
-      
+          count=$(ls -1 *.apk 2>/dev/null | wc -l)
+          echo "Published $count APK(s) to the release."
+
       - name: Cleanup Version Override
         if: ${{ inputs.version != '' && always() }}
         run: |
@@ -247,13 +170,6 @@ jobs:
             config_file="$dir/${{ inputs.app_name }}.json"
             if [ -f "$config_file" ]; then
               echo "Resetting version in $config_file"
-              python -c "
-              import json, sys, os
-              with open('$config_file', 'r') as f:
-                  config = json.load(f)
-              config['version'] = ''
-              with open('$config_file', 'w') as f:
-                  json.dump(config, f, indent=2)
-              "
+              python3 -c "import json; p='$config_file'; c=json.load(open(p)); c['version']=''; json.dump(c, open(p, 'w'), indent=2)"
             fi
           done

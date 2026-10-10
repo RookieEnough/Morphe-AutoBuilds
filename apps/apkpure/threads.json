@@ -1,1 +1,5 @@
-{"name":"threads","package":"com.instagram.threads","version":""}
+{
+    "name": "threads",
+    "package": "com.instagram.barcelona",
+    "version": ""
+}

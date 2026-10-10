@@ -1,9 +1,9 @@
 {
-  "org": "mapy",
-  "name": "mapy",
-  "type": "APK",
+  "org": "seznam-cz-a-s",
+  "name": "mapy-cz-navigation-off-maps",
+  "type": "BUNDLE",
   "arch": "universal",
-  "dpi": "nodpi",
+  "dpi": "120-640dpi",
   "package": "cz.seznam.mapy",
   "version": ""
 }

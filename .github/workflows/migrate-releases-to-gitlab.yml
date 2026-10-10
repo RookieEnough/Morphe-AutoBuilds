@@ -1,0 +1,76 @@
+name: Migrate GitHub release assets to GitLab (one-time)
+
+# One-time migration: copies every asset from the GitHub 'latest' release to
+# the GitLab sarthaksinha00/Community-builds generic package registry, sets
+# them as asset links on the GitLab 'latest' release, and verifies every file
+# by HEAD size comparison. Run with dry_run first, then for real.
+# Requires the GITLAB_TOKEN repo secret.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "List what would be migrated without uploading"
+        type: boolean
+        required: false
+        default: true
+
+jobs:
+  migrate:
+    name: Migrate release assets to GitLab
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: pip install requests
+
+      - name: Check GITLAB_TOKEN
+        env:
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+        run: |
+          if [ -z "$GITLAB_TOKEN" ]; then
+            echo "GITLAB_TOKEN secret is not set. Add it, then re-run."
+            exit 1
+          fi
+
+      - name: Download all assets from GitHub 'latest' release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p ./gh-assets
+          expected=$(gh release view latest --json assets --jq '.assets | length')
+          echo "Expecting $expected assets"
+          # GitHub's API occasionally 500s on a single asset; retry the batch
+          # with --skip-existing until the file count matches.
+          for i in 1 2 3 4 5; do
+            gh release download latest --dir ./gh-assets --skip-existing || true
+            got=$(ls -1 ./gh-assets | wc -l)
+            echo "Attempt $i: $got/$expected files"
+            [ "$got" -ge "$expected" ] && break
+            sleep 15
+          done
+          got=$(ls -1 ./gh-assets | wc -l)
+          if [ "$got" -lt "$expected" ]; then
+            echo "Only downloaded $got of $expected assets after 5 attempts"
+            exit 1
+          fi
+
+      - name: Migrate assets to GitLab and verify
+        env:
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+          GITLAB_PROJECT_ID: "87288318"
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            python scripts/migrate_gitlab_assets.py --src-dir ./gh-assets --dry-run
+          else
+            python scripts/migrate_gitlab_assets.py --src-dir ./gh-assets
+          fi

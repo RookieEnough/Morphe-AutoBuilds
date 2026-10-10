@@ -1,0 +1,58 @@
+name: Migrate GitHub release assets to Codeberg (one-time)
+
+# One-time migration: copies every asset from the GitHub 'latest' release to
+# the Codeberg RookieZ/Community-Builds 'latest' release and verifies
+# name+size of every file. Run with dry_run first, then for real.
+# Requires the CODEBERG_TOKEN repo secret and the RookieZ/Community-Builds
+# repo to exist on Codeberg.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "List what would be migrated without uploading"
+        type: boolean
+        required: false
+        default: true
+
+jobs:
+  migrate:
+    name: Migrate release assets to Codeberg
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Check CODEBERG_TOKEN
+        env:
+          CODEBERG_TOKEN: ${{ secrets.CODEBERG_TOKEN }}
+        run: |
+          if [ -z "$CODEBERG_TOKEN" ]; then
+            echo "CODEBERG_TOKEN secret is not set. Create RookieZ/Community-Builds on Codeberg, add the token, then re-run."
+            exit 1
+          fi
+
+      - name: Download all assets from GitHub 'latest' release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p ./gh-assets
+          gh release download latest --dir ./gh-assets
+          echo "Downloaded $(ls -1 ./gh-assets | wc -l) files"
+
+      - name: Migrate assets to Codeberg and verify
+        env:
+          CODEBERG_TOKEN: ${{ secrets.CODEBERG_TOKEN }}
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            python scripts/migrate_release_assets.py --src-dir ./gh-assets --dry-run
+          else
+            python scripts/migrate_release_assets.py --src-dir ./gh-assets
+          fi

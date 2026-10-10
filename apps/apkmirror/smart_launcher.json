@@ -2,9 +2,9 @@
     "org": "smart-launcher-team",
     "name": "smart-launcher",
     "release_prefix": "smart-launcher-6-‧-home-screen",
-    "type": "APK", 
-    "arch": "universal",
-    "dpi": "nodpi",
+    "type": "BUNDLE", 
+    "arch": "arm64-v8a",
+    "dpi": "480dpi",
     "package" : "ginlemon.flowerfree",
     "version" : ""
 }

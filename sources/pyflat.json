@@ -1,0 +1,15 @@
+[
+    {
+        "name": "morphe-patches"
+    },
+    {
+        "user": "MorpheApp",
+        "repo": "morphe-cli",
+        "tag": "latest"
+    },
+    {
+        "user": "PyFlat-JR",
+        "repo": "Morphe-Patches",
+        "tag": "latest"
+    }
+]

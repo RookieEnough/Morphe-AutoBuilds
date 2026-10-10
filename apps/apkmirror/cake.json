@@ -1,8 +1,9 @@
 { 
   "org": "cake-corp", 
   "name": "cake-lesson-updates-every-day",
+  "release_prefix": "cake-learn-english-korean",
   "type": "APK",
-  "arch": "",
+  "arch": "arm64-v8a",
   "dpi":"nodpi",
   "package": "me.mycake",
   "version": ""

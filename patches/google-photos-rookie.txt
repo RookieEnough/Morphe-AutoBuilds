@@ -1,4 +1,4 @@
-+ Change package name 
+- Clone app
 
 - Spoof build info
 - Enable DCIM folders backup control

@@ -1,107 +1,424 @@
 {
   "patch_list": [
-    { "app_name": "tiktok", "source": "icysymmetra"},
-    { "app_name": "youtube", "source": "morphe" },
-    { "app_name": "youtube-music", "source": "morphe" },
-    { "app_name": "reddit", "source": "morphe" },
-    { "app_name": "instagram", "source": "piko" },
-    { "app_name": "pinterest", "source": "adobo" },
-    { "app_name": "soundcloud", "source": "Hoo" },
-    { "app_name": "lyfta", "source": "Hoo" },
-    { "app_name": "camscanner", "source": "Hoo" },
-    { "app_name": "macrofactor", "source": "Hoo" },
-    { "app_name": "macrofactor-workout", "source": "Hoo" },
-    { "app_name": "mirinae", "source": "Hoo" },
-    { "app_name": "niagara", "source": "Hoo" },
-    { "app_name": "lightroom", "source": "Hoo" },
-    { "app_name": "pydroid", "source": "Hoo" },
-    { "app_name": "snorelab", "source": "Hoo" },
-    { "app_name": "ventusky", "source": "Hoo" },
-    { "app_name": "xodo", "source": "Hoo" },
-    { "app_name": "xrecorder", "source": "Hoo" },
-    { "app_name": "google-photos", "source": "rookie" },
-    { "app_name": "disney-plus", "source": "rookie" },
-    { "app_name": "pinterest", "source": "adobo" },
-    { "app_name": "duolingo", "source": "Hoo" },
-    { "app_name": "google-news", "source": "rookie" },
-    { "app_name": "messenger", "source": "rookie" },
-    { "app_name": "photomath", "source": "rookie" },
-    { "app_name": "pixiv", "source": "rookie" },
-    { "app_name": "prime-video", "source": "Hoo" },
-    { "app_name": "proton-mail", "source": "rookie" },
-    { "app_name": "proton-vpn", "source": "Hoo" },
-    { "app_name": "meme", "source": "Hoo" },
-    { "app_name": "aiocal", "source": "Hoo" },
-    { "app_name": "fotmob", "source": "Hoo" },
-    { "app_name": "hellochinese", "source": "Hoo" },
-    { "app_name": "nomone", "source": "Hoo" },
-    { "app_name": "wallcraft", "source": "Hoo" },
-    { "app_name": "bussu", "source": "Hoo" },
-    { "app_name": "number", "source": "revanced-kitadai31" },
-    { "app_name": "pandora", "source": "Hoo" },
-    { "app_name": "mimo", "source": "Hoo" },
-    { "app_name": "icon-packer", "source": "Hoo" },
-    { "app_name": "rar", "source": "rookie" },
-    { "app_name": "strava", "source": "rookie" },
-    { "app_name": "tumblr", "source": "rookie" },
-    { "app_name": "threads", "source": "rookie"},
-    { "app_name": "crunchyroll", "source": "Hoo" },
-    { "app_name": "tasker", "source": "dropped" },
-    { "app_name": "icon-pack-studio", "source": "rookie" },
-    { "app_name": "my-expenses", "source": "Hoo" },
-    { "app_name": "avocards", "source": "Hoo" },
-    { "app_name": "cake", "source": "Hoo" },
-    { "app_name": "eggbun", "source": "Hoo" },
-    { "app_name": "lingory", "source": "Hoo" },
-    { "app_name": "teuida", "source": "Hoo" },
-    { "app_name": "sofascore", "source": "Hoo" },
-    { "app_name": "ttmik-stories", "source": "Hoo" },
-    { "app_name": "windy", "source": "Hoo" },
-    { "app_name": "calistree", "source": "brosssh" },
-    { "app_name": "webster", "source": "Hoo" },
-    { "app_name": "chargeprice", "source": "brosssh" },
-    { "app_name": "mapy", "source": "brosssh" },
-    { "app_name": "telegram", "source": "paresh" },
-    { "app_name": "park4night", "source": "brosssh" },
-    { "app_name": "komoot", "source": "brosssh" },
-    { "app_name": "hevy", "source": "brosssh" },
-    { "app_name": "geocaching", "source": "brosssh" },
-    { "app_name": "nova", "source": "rushiranpise" },
-    { "app_name": "earphone", "source": "tosox" },
-    { "app_name": "flatastic", "source": "tosox" },
-    { "app_name": "kicker", "source": "tosox" },
-    { "app_name": "ticktick", "source": "paresh" },
-    { "app_name": "crex", "source": "paresh" },
-    { "app_name": "documentscanner", "source": "paresh" },
-    { "app_name": "eyecon", "source": "paresh" },
-    { "app_name": "fing", "source": "paresh" },
-    { "app_name": "lumina", "source": "paresh" },
-    { "app_name": "mark", "source": "paresh" },
-    { "app_name": "starsense", "source": "paresh" },
-    { "app_name": "prompter", "source": "paresh" },
-    { "app_name": "macrodroid", "source": "paresh" },
-    { "app_name": "alarmo", "source": "paresh" },
-    { "app_name": "vn", "source": "paresh" },
-    { "app_name": "splitwise", "source": "burgers" },
-    { "app_name": "trakt", "source": "tosox" },
-    { "app_name": "letterboxd", "source": "rookie" },
-    { "app_name": "kakaotalk", "source": "ample-dev" },
-    { "app_name": "mladinska", "source": "blazskufca" },
-    { "app_name": "fxfile", "source": "dropped" },
-    { "app_name": "myfitnesspal", "source": "Hoo" },
-    { "app_name": "smart_launcher", "source": "Hoo" },
-    { "app_name": "podcast", "source": "Hoo" },
-    { "app_name": "solid", "source": "Hoo" },
-    { "app_name": "wps-office", "source": "Hoo" },
-    { "app_name": "ibs_paint", "source": "Hoo" },
-    { "app_name": "pokecardex", "source": "almewty" },
-    { "app_name": "gamehub", "source": "liaralabs" },
-    { "app_name": "dialer", "source": "taknok" },
-    { "app_name": "windscribe", "source": "rushiranpise-dev" },
-    { "app_name": "x", "source": "piko" },
-    { "app_name": "gboard", "source": "jasonwu1994" },
-    { "app_name": "google-photos", "source": "akash-sriram" },
-    { "app_name": "google-maps", "source": "bearinmindcat" },
-    { "app_name": "gboard", "source": "3r01" }
+    {
+      "app_name": "tiktok",
+      "source": "icysymmetra"
+    },
+    {
+      "app_name": "youtube",
+      "source": "morphe"
+    },
+    {
+      "app_name": "youtube-music",
+      "source": "morphe"
+    },
+    {
+      "app_name": "reddit",
+      "source": "morphe"
+    },
+    {
+      "app_name": "instagram",
+      "source": "piko"
+    },
+    {
+      "app_name": "pinterest",
+      "source": "adobo"
+    },
+    {
+      "app_name": "soundcloud",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "lyfta",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "camscanner",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "macrofactor",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "macrofactor-workout",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "mirinae",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "niagara",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "lightroom",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "pydroid",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "snorelab",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "ventusky",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "xodo",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "xrecorder",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "google-photos",
+      "source": "rookie"
+    },
+    {
+      "app_name": "disney-plus",
+      "source": "rookie"
+    },
+    {
+      "app_name": "pinterest",
+      "source": "adobo"
+    },
+    {
+      "app_name": "duolingo",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "google-news",
+      "source": "rookie"
+    },
+    {
+      "app_name": "messenger",
+      "source": "rookie"
+    },
+    {
+      "app_name": "photomath",
+      "source": "rookie"
+    },
+    {
+      "app_name": "pixiv",
+      "source": "rookie"
+    },
+    {
+      "app_name": "prime-video",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "proton-mail",
+      "source": "rookie"
+    },
+    {
+      "app_name": "proton-vpn",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "meme",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "aiocal",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "fotmob",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "hellochinese",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "nomone",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "wallcraft",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "bussu",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "number",
+      "source": "revanced-kitadai31"
+    },
+    {
+      "app_name": "pandora",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "mimo",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "icon-packer",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "rar",
+      "source": "rookie"
+    },
+    {
+      "app_name": "strava",
+      "source": "rookie"
+    },
+    {
+      "app_name": "tumblr",
+      "source": "rookie"
+    },
+    {
+      "app_name": "threads",
+      "source": "rookie"
+    },
+    {
+      "app_name": "crunchyroll",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "tasker",
+      "source": "dropped"
+    },
+    {
+      "app_name": "icon-pack-studio",
+      "source": "rookie"
+    },
+    {
+      "app_name": "my-expenses",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "avocards",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "cake",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "eggbun",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "lingory",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "teuida",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "sofascore",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "ttmik-stories",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "windy",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "calistree",
+      "source": "brosssh"
+    },
+    {
+      "app_name": "webster",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "chargeprice",
+      "source": "brosssh"
+    },
+    {
+      "app_name": "mapy",
+      "source": "brosssh"
+    },
+    {
+      "app_name": "telegram",
+      "source": "paresh"
+    },
+    {
+      "app_name": "park4night",
+      "source": "brosssh"
+    },
+    {
+      "app_name": "komoot",
+      "source": "brosssh"
+    },
+    {
+      "app_name": "hevy",
+      "source": "brosssh"
+    },
+    {
+      "app_name": "geocaching",
+      "source": "brosssh"
+    },
+    {
+      "app_name": "nova",
+      "source": "rushiranpise"
+    },
+    {
+      "app_name": "earphone",
+      "source": "tosox"
+    },
+    {
+      "app_name": "flatastic",
+      "source": "tosox"
+    },
+    {
+      "app_name": "kicker",
+      "source": "tosox"
+    },
+    {
+      "app_name": "ticktick",
+      "source": "paresh"
+    },
+    {
+      "app_name": "crex",
+      "source": "paresh"
+    },
+    {
+      "app_name": "documentscanner",
+      "source": "paresh"
+    },
+    {
+      "app_name": "eyecon",
+      "source": "paresh"
+    },
+    {
+      "app_name": "fing",
+      "source": "paresh"
+    },
+    {
+      "app_name": "lumina",
+      "source": "paresh"
+    },
+    {
+      "app_name": "mark",
+      "source": "paresh"
+    },
+    {
+      "app_name": "starsense",
+      "source": "paresh"
+    },
+    {
+      "app_name": "prompter",
+      "source": "paresh"
+    },
+    {
+      "app_name": "macrodroid",
+      "source": "paresh"
+    },
+    {
+      "app_name": "alarmo",
+      "source": "paresh"
+    },
+    {
+      "app_name": "vn",
+      "source": "paresh"
+    },
+    {
+      "app_name": "splitwise",
+      "source": "burgers"
+    },
+    {
+      "app_name": "trakt",
+      "source": "tosox"
+    },
+    {
+      "app_name": "letterboxd",
+      "source": "rookie"
+    },
+    {
+      "app_name": "kakaotalk",
+      "source": "ample-dev"
+    },
+    {
+      "app_name": "mladinska",
+      "source": "blazskufca"
+    },
+    {
+      "app_name": "fxfile",
+      "source": "dropped"
+    },
+    {
+      "app_name": "myfitnesspal",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "smart_launcher",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "podcast",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "solid",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "wps-office",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "ibs_paint",
+      "source": "Hoo"
+    },
+    {
+      "app_name": "pokecardex",
+      "source": "almewty"
+    },
+    {
+      "app_name": "gamehub",
+      "source": "liaralabs"
+    },
+    {
+      "app_name": "dialer",
+      "source": "taknok"
+    },
+    {
+      "app_name": "windscribe",
+      "source": "rushiranpise-dev"
+    },
+    {
+      "app_name": "x",
+      "source": "piko"
+    },
+    {
+      "app_name": "x-new",
+      "source": "piko-newx"
+    },
+    {
+      "app_name": "gboard",
+      "source": "jasonwu1994"
+    },
+    {
+      "app_name": "gboard",
+      "source": "3r01"
+    },
+    {
+      "app_name": "google-photos",
+      "source": "akash-sriram"
+    },
+    {
+      "app_name": "google-maps",
+      "source": "bearinmindcat"
+    },
+    {
+      "app_name": "facebook",
+      "source": "devanced"
+    }
   ]
 }

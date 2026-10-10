@@ -90,6 +90,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           FORCE_FULL_REBUILD: ${{ inputs.force_full_rebuild || 'false' }}
+          # Release state now lives on GitLab: the planner reads manifest.json
+          # and the APK list from the GitLab release instead of GitHub's.
+          MORPHE_PLATFORM: gitlab
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+          GITLAB_PROJECT_ID: "87288318"
         run: |
           python scripts/check_app_updates.py
 
@@ -139,10 +144,10 @@ jobs:
     needs: patch-apps
     runs-on: ubuntu-latest
     services:
-      trawl:
-        image: ghcr.io/germondai/trawl:latest
+      flaresolverr:
+        image: ghcr.io/flaresolverr/flaresolverr:latest
         ports:
-          - 8191:8191
+          - 8192:8191
         options: --shm-size=1gb
     permissions:
       contents: write
@@ -177,13 +182,25 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
+      - name: Wait for FlareSolverr
+        run: |
+          echo "Waiting for FlareSolverr to be ready..."
+          for i in $(seq 1 30); do
+            if curl -s http://localhost:8192/ > /dev/null 2>&1; then
+              echo "FlareSolverr is ready."
+              break
+            fi
+            echo "Waiting... ($i/30)"
+            sleep 5
+          done
+
       - name: Build APK
         env:
           APP_NAME: ${{ matrix.app_name }}
           SOURCE: ${{ matrix.source }}
           ARCH: ${{ matrix.arch }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TRAWL_URL: http://localhost:8191
+          FLARESOLVERR_URL: http://localhost:8192/v1
         run: |
           echo "Building ${{ matrix.app_name }} with ${{ matrix.source }}..."
           sleep $((RANDOM % 30)).$((RANDOM % 100))
@@ -310,153 +327,33 @@ jobs:
         run: |
           python scripts/validate_github_auth.py
 
-      - name: Check Existing Release
+      - name: Install Publisher Dependencies
         if: steps.check-apks.outputs.skip_release == 'false'
-        id: check-release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          if gh release view latest >/dev/null 2>&1; then
-            echo "release_exists=true" >> "$GITHUB_OUTPUT"
-            echo "✅ Release 'latest' exists; assets will be updated in place."
-          else
-            echo "release_exists=false" >> "$GITHUB_OUTPUT"
-            echo "📭 Release 'latest' does not exist; it will be created."
-          fi
-      
-      - name: Generate Release Notes
+        run: pip install requests
+
+      - name: Publish to GitLab Releases
         if: steps.check-apks.outputs.skip_release == 'false'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+          GITLAB_PROJECT_ID: "87288318"
         run: |
-          echo "📝 Generating release notes..."
-
-          if [ "${{ steps.check-release.outputs.release_exists }}" = "true" ]; then
-            gh release view latest --json assets --jq '.assets[].name' > current_assets.txt
-          else
-            : > current_assets.txt
-          fi
-
-          for apk in ./release-apks/*.apk; do
-            [ -f "$apk" ] || continue
-            basename "$apk" >> current_assets.txt
-          done
-
-          if [ -f ./release-apks/manifest.json ]; then
-            echo "manifest.json" >> current_assets.txt
-          fi
-
-          sort -u current_assets.txt > release_assets.txt
-
-          cat > release_notes.md << 'EOF'
-          # Morphe APKs - Auto Built
-          
-          ## 📱 Available Apps
-          
-          EOF
-
-          while read -r filename; do
-            [ -n "$filename" ] || continue
-            echo "- $filename" >> release_notes.md
-          done < release_assets.txt
-
-          cat >> release_notes.md << 'EOF'
-          ---
-          
-          ## ⚙️ Build Information
-          - **Auto-built daily at 6 AM UTC**
-          - **Multiple architecture support** (arm64-v8a, armeabi-v7a, universal)
-          - **Latest Morphe patches**
-          - **Updated automatically**
-          
-          ## 📊 Architecture Guide
-          - **arm64-v8a**: Modern ARM devices (2014+)
-          - **armeabi-v7a**: Older ARM devices
-          - **universal**: All ARM devices (larger file)
-          
-          ## ⚠️ Disclaimer
-          These APKs are built automatically. Use at your own risk.
-          
-          ## 🔄 Update Schedule
-          - Automatic updates daily at 6 AM UTC
-          - Manual updates available via workflow dispatch
-          - Creates `latest` if missing and uploads rebuilt assets in place
-          EOF
-      
-      - name: Upload Or Create Release
-        if: steps.check-apks.outputs.skip_release == 'false'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          echo "🚀 Publishing rebuilt assets to release..."
-
-          # Count APKs
-          apk_count=$(ls -1 ./release-apks/*.apk 2>/dev/null | wc -l || echo "0")
-
-          if [ $apk_count -eq 0 ]; then
-            echo "❌ No APKs found to release"
+          if [ -z "$GITLAB_TOKEN" ]; then
+            echo "GITLAB_TOKEN secret is not set on this repo."
             exit 1
           fi
+          # gitlab_publish_release.py --merge: uploads new APKs + manifest to the
+          # GitLab generic package registry, add/replaces their release asset
+          # links, deletes superseded older-version APKs, refreshes notes.
+          # Upload-first-then-cleanup order is preserved inside the script.
+          python scripts/gitlab_publish_release.py \
+            --apks-dir ./release-apks \
+            --merge
 
-          echo "📦 Releasing $apk_count APK(s)..."
-
-          # Build the asset list: APKs + optional manifest.json
-          ASSETS=( ./release-apks/*.apk )
-          if [ -f ./release-apks/manifest.json ]; then
-            ASSETS+=( ./release-apks/manifest.json )
-            echo "📎 Including manifest.json"
-          fi
-
-          if [ "${{ steps.check-release.outputs.release_exists }}" = "true" ]; then
-            echo "⬆️ Uploading rebuilt assets in place and refreshing release metadata..."
-
-            # Delete superseded older-version APKs. The previous loop only deleted
-            # assets whose filename EXACTLY matched a new APK; since APK names
-            # embed the version, old versions (e.g. v2.4.0) never matched the new
-            # v2.5.0 and accumulated forever. cleanup_old_apks.py deletes any
-            # release APK sharing a {app}-{arch}- identity prefix with a new APK
-            # but with a different version.
-            : > keep_apks.txt
-            for apk in ./release-apks/*.apk; do
-              [ -f "$apk" ] || continue
-              basename "$apk" >> keep_apks.txt
-            done
-            python scripts/cleanup_old_apks.py --release latest --keep-file keep_apks.txt || \
-              echo "⚠️  cleanup_old_apks.py failed; continuing with exact-name cleanup"
-
-            # Upload new APKs and manifest
-            gh release upload latest "${ASSETS[@]}" --clobber
-            gh release edit latest \
-              --title "Morphe APKs - $(date +'%Y-%m-%d %H:%M')" \
-              --notes-file release_notes.md
-          else
-            echo "🆕 Creating 'latest' release..."
-            gh release create "latest" \
-              --title "Morphe APKs - $(date +'%Y-%m-%d %H:%M')" \
-              --notes-file release_notes.md \
-              "${ASSETS[@]}" \
-              --latest
-          fi
-
-          echo "✅ Release publish step completed successfully!"
-      
-      - name: Display Release URL
+      - name: Publish Summary
         if: steps.check-apks.outputs.skip_release == 'false'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          release_url=$(gh release view latest --json url --jq .url)
-          echo "🔗 Release URL: $release_url"
-          echo ""
-          echo "📦 Direct Download Links:"
-          for apk in ./release-apks/*.apk; do
-            filename=$(basename "$apk")
-            echo "- $filename: $release_url/download/$filename"
-          done
+          count=$(ls -1 ./release-apks/*.apk 2>/dev/null | wc -l)
+          echo "Published $count APK(s) plus manifest to the release."
 
   cleanup:
     name: Cleanup Workflow Runs

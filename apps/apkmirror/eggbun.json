@@ -4,6 +4,6 @@
   "type": "APK",
   "arch": "universal",
   "dpi": "nodpi",
-  "package": "kr.eggbun.eggcon.kor",
+  "package": "kr.eggbun.eggconvo",
   "version": ""
 }

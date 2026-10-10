@@ -1,1 +1,1 @@
-{"org":"twitch-interactive","name":"twitch","type":"APK","arch":"universal","dpi":"nodpi","package":"tv.twitch.android.app","version":""}
+{"org":"twitch-interactive","name":"twitch","type":"BUNDLE","arch":"arm64-v8a + armeabi-v7a","dpi":"480-640dpi","package":"tv.twitch.android.app","version":""}
