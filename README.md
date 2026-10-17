@@ -138,6 +138,25 @@ Located in the `apps/` directory. Example for `apps/apkmirror/youtube.json`:
 
 ```
 
+### Play Store update protection
+
+TikTok, Twitter and X builds set `android:versionCode` to `2147483647` before
+alignment and signing, matching Morphe's **Disable Play Store updates** patch.
+Package IDs, `versionName`, patch selection and the existing signing key stay
+unchanged. This prevents ordinary higher-version Play Store update offers; it
+is not a root-level detach and does not erase Play Store's cached listings.
+
+Future protected builds can replace protected installs at the same version code.
+Returning to a stock/lower-version-code build requires uninstalling first (with
+potential data loss). Orion's current update detection compares `versionName`,
+so the fixed code does not hide newer Orion versions. When first deploying this
+change, force a full rebuild so the incremental release does not carry over old
+APKs.
+
+Requires Android SDK `zipalign` with 16 KB page-alignment support alongside
+`apksigner`. Run the offline regression check with
+`python tests/test_play_updates.py`.
+
 ### 4. Build Options
 
 Located in `patches/`. Example for `patches/youtube-morphe.txt`. Use `+` to force include and `-` to exclude.
