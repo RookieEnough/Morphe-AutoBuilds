@@ -342,23 +342,13 @@ jobs:
             echo "available=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Publish to GitLab Releases
-        if: steps.check-apks.outputs.skip_release == 'false' && steps.gitlab-token.outputs.available == 'true'
+      - name: Publish Obtainium Releases
+        if: steps.check-apks.outputs.skip_release == 'false'
         env:
-          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
-          GITLAB_PROJECT_ID: "87288318" # Could use ${{ secrets.GITHUB_PROJECTID }} instead
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ -z "$GITLAB_TOKEN" ]; then
-            echo "GITLAB_TOKEN secret is not set on this repo."
-            exit 1
-          fi
-          # gitlab_publish_release.py --merge: uploads new APKs + manifest to the
-          # GitLab generic package registry, add/replaces their release asset
-          # links, deletes superseded older-version APKs, refreshes notes.
-          # Upload-first-then-cleanup order is preserved inside the script.
-          python scripts/gitlab_publish_release.py \
-            --apks-dir ./release-apks \
-            --merge
+          python scripts/publish_obtainium_releases.py ./release-apks
 
       - name: Verify GitLab Release Health
         if: always() && steps.check-apks.outputs.skip_release == 'false' && steps.gitlab-token.outputs.available == 'true'
