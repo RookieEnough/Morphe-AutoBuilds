@@ -144,7 +144,7 @@ jobs:
         if: ${{ inputs.replace_in_release == true }}
         env:
           GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
-          GITLAB_PROJECT_ID: "87288318"
+          GITLAB_PROJECT_ID: "88812153"
         run: |
           if [ -z "$GITLAB_TOKEN" ]; then
             echo "GITLAB_TOKEN secret is not set on this repo."
@@ -160,7 +160,7 @@ jobs:
         if: always() && ${{ inputs.replace_in_release == true }}
         env:
           GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
-          GITLAB_PROJECT_ID: "87288318"
+          GITLAB_PROJECT_ID: "88812153"
         run: |
           # Safety net for the 2026-10-09 / 2026-10-22 failure mode: if the
           # publish step died after the tag move, GitLab is left with the tag
