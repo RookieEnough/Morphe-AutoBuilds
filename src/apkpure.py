@@ -55,30 +55,57 @@ def _api_versions(package: str):
         return None
 
 
+def _version_name_matches(name: str, version: str) -> bool:
+    if not name:
+        return False
+    if name == version.strip():
+        return True
+    fn, rn = utils.normalize_version(name), utils.normalize_version(version)
+    return bool(fn) and bool(rn) and fn == rn
+
+
 def _api_match(versions, version: str):
     """Find the API entry matching the requested version.
 
     Prefers entries that actually have download URLs, since some API entries
     list a version without usable assets.
     """
-    def _name_matches(name: str) -> bool:
-        if not name:
-            return False
-        if name == version.strip():
-            return True
-        fn, rn = utils.normalize_version(name), utils.normalize_version(version)
-        return bool(fn) and bool(rn) and fn == rn
-
     # First pass: matching version WITH download URLs
     for v in versions:
-        if _name_matches((v.get("version_name") or "").strip()):
+        if _version_name_matches((v.get("version_name") or "").strip(), version):
             if _api_download_url(v):
                 return v
     # Second pass: matching version even without URLs (caller decides)
     for v in versions:
-        if _name_matches((v.get("version_name") or "").strip()):
+        if _version_name_matches((v.get("version_name") or "").strip(), version):
             return v
     return None
+
+
+def get_download_links(version: str, app_name: str, config: str) -> list[str]:
+    """Return every direct download URL the API lists for this version.
+
+    The API returns one entry per device variant of the same version, and
+    the variants carry different split sets (one has the arm64-v8a config
+    split, another armeabi-v7a, another extra languages/densities). Any
+    single variant merged alone produces an APK missing the other ABIs, so
+    the downloader fetches all of them and combines them into one bundle.
+    Returns an empty list when the API has nothing for this version (the
+    caller then falls back to the single-link scrape path).
+    """
+    package = config.get("package", "")
+    versions = _api_versions(package)
+    if not versions:
+        return []
+    urls: list[str] = []
+    for v in versions:
+        if _version_name_matches((v.get("version_name") or "").strip(), version):
+            dl = _api_download_url(v)
+            if dl and dl not in urls:
+                urls.append(dl)
+    if urls:
+        logging.info(f"APKPure API: {len(urls)} variant download(s) for {app_name} v{version}")
+    return urls
 
 
 def _api_download_url(entry) -> str | None:

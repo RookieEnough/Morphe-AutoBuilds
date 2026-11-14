@@ -171,6 +171,21 @@ def run_build(app_name: str, source: str, arch: str = "universal") -> str:
         if apk_path is None:
             logging.warning(f"Discarding unusable download from {method.__name__}; trying next source")
             continue
+        # Reject downloads that provably lack the architecture being built.
+        # Mirrors serve per-device variants (for example an XAPK whose only
+        # ABI split is armeabi-v7a); patching one and shipping it as
+        # "universal" produces an APK that refuses to install on 64-bit-only
+        # devices. No ABI evidence (no visible splits or libraries) is not
+        # a rejection; the post-merge guard below is the backstop.
+        abis = utils.download_abis(apk_path)
+        required_abis = {"arm64-v8a"} if arch == "universal" else {arch}
+        if abis and not required_abis.issubset(abis):
+            logging.warning(
+                f"Discarding download from {method.__name__}: it provides ABIs "
+                f"{sorted(abis)}, which do not cover {arch}; trying next source"
+            )
+            apk_path.unlink(missing_ok=True)
+            continue
         input_apk, version, candidates = apk_path, ver, cands
         used_method = method
         break
@@ -301,6 +316,28 @@ def run_build(app_name: str, source: str, arch: str = "universal") -> str:
                 utils.strip_zip_entries(input_apk, ["lib/x86/*", "lib/x86_64/*", "lib/arm64-v8a/*"])
         else:
             utils.strip_zip_entries(input_apk, ["lib/x86/*", "lib/x86_64/*"])
+
+        # Final ABI guard: never ship a build whose native libraries do not
+        # cover the architecture in its label. (2026-10-30: "universal" X and
+        # Reddit builds merged from a single armeabi-v7a variant would not
+        # install on 64-bit-only devices.) Failing the attempt is correct;
+        # the store keeps serving the previous good build.
+        merged_abis = utils.download_abis(input_apk)
+        if merged_abis:
+            if arch == "universal" and "arm64-v8a" not in merged_abis:
+                logging.error(
+                    f"Universal build for {app_name} v{version} contains only "
+                    f"{sorted(merged_abis)} native libraries; refusing to ship "
+                    f"a build that 64-bit-only devices cannot install"
+                )
+                continue
+            if arch != "universal" and arch not in merged_abis:
+                logging.error(
+                    f"Build for {app_name} v{version} contains only "
+                    f"{sorted(merged_abis)} native libraries, not {arch}; "
+                    f"refusing to ship it under the {arch} label"
+                )
+                continue
 
         # Validate APK integrity (safety net: downloads were already validated,
         # but bundle merging / arch stripping can corrupt the file).

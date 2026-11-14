@@ -659,3 +659,76 @@ def ensure_usable_apk(apk_path: Path, app_name: str, version: str) -> Path | Non
         logging.info(f"APK {apk_path.name} passes zip integrity check")
 
     return apk_path
+
+
+KNOWN_ABIS = {"arm64-v8a", "armeabi-v7a", "armeabi", "x86", "x86_64"}
+_SPLIT_ABI_RE = re.compile(r"config\.([a-z0-9_]+)\.apk$", re.IGNORECASE)
+
+
+def _normalize_abi(token: str) -> str:
+    return token.strip().lower().replace("_", "-")
+
+
+def download_abis(path: Path) -> set[str]:
+    """Return the native ABIs a downloaded APK or bundle provably provides.
+
+    Plain APK: its ``lib/<abi>/`` entries. Bundle (XAPK/APKS/APKM): the
+    ``config.<abi>`` split APK names (which is exactly what the APKEditor
+    merge will carry into the merged APK) plus any ``lib/<abi>/`` entries.
+
+    An empty set means "no evidence": the app may have no native code at
+    all, or its libraries sit inside a bundle's base APK where this listing
+    cannot see them. Callers must only reject a download on positive
+    evidence (a non-empty set missing a required ABI), never on an empty
+    set.
+    """
+    abis: set[str] = set()
+    if not path or not path.exists() or not zipfile.is_zipfile(path):
+        return abis
+    try:
+        with zipfile.ZipFile(path, "r") as z:
+            for name in z.namelist():
+                parts = name.split("/")
+                if len(parts) >= 2 and parts[0] == "lib":
+                    abi = _normalize_abi(parts[1])
+                    if abi in KNOWN_ABIS:
+                        abis.add(abi)
+                m = _SPLIT_ABI_RE.search(name)
+                if m:
+                    abi = _normalize_abi(m.group(1))
+                    if abi in KNOWN_ABIS:
+                        abis.add(abi)
+    except Exception:
+        pass
+    return abis
+
+
+def combine_bundles(paths: list[Path], out_path: Path) -> Path | None:
+    """Combine several bundle files into one bundle holding the union of
+    their entries (first occurrence wins on duplicate names).
+
+    Mirrors serve per-device variants of the same app version as separate
+    XAPKs whose split sets differ (one carries the arm64-v8a config split,
+    another the armeabi-v7a split, a third extra languages). Merging any
+    single variant produces an APK that lacks the other variants' splits;
+    the union is what a full bundle would have contained.
+    """
+    try:
+        seen: set[str] = set()
+        with zipfile.ZipFile(out_path, "w") as zout:
+            for p in paths:
+                with zipfile.ZipFile(p, "r") as zin:
+                    for item in zin.infolist():
+                        if item.is_dir() or item.filename in seen:
+                            continue
+                        seen.add(item.filename)
+                        zout.writestr(item, zin.read(item.filename))
+        logging.info(
+            f"Combined {len(paths)} bundle variants into {out_path.name} "
+            f"({len(seen)} unique entries)"
+        )
+        return out_path
+    except Exception as e:
+        logging.warning(f"Failed to combine bundle variants: {e}")
+        out_path.unlink(missing_ok=True)
+        return None
