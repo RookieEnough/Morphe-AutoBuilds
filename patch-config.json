@@ -371,6 +371,10 @@
     {
       "app_name": "facebook",
       "source": "hushfacebook"
+    },
+    {
+      "app_name": "atvtools",
+      "source": "hxreborn"
     }
   ]
 }
