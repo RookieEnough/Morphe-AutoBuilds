@@ -371,6 +371,38 @@
     {
       "app_name": "facebook",
       "source": "hushfacebook"
+    },
+    {
+      "app_name": "discord",
+      "source": "venus"
+    },
+    {
+      "app_name": "twitch",
+      "source": "seythegamer"
+    },
+    {
+      "app_name": "tasker",
+      "source": "kinos"
+    },
+    {
+      "app_name": "kicker",
+      "source": "pyflat"
+    },
+    {
+      "app_name": "viber",
+      "source": "hxreborn"
+    },
+    {
+      "app_name": "proton-mail",
+      "source": "hxreborn"
+    },
+    {
+      "app_name": "truecaller",
+      "source": "heval"
+    },
+    {
+      "app_name": "fxfile",
+      "source": "heval"
     }
   ]
 }
