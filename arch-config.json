@@ -33,5 +33,10 @@
     "app_name": "messenger",
     "source": "revanced",
     "arches": ["arm64-v8a", "armeabi-v7a"]
+  },
+  {
+    "app_name": "mark",
+    "source": "paresh",
+    "arches": ["armeabi-v7a"]
   }
 ]

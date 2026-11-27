@@ -1,9 +1,9 @@
 {
-  "org": "facebook",
+  "org": "facebook-2",
   "name": "facebook",
-  "type": "APK",
+  "type": "BUNDLE",
   "arch": "arm64-v8a",
-  "dpi": "nodpi",
+  "dpi": "120-480dpi",
   "package": "com.facebook.katana",
-  "version": "583.0.0.39.55"
+  "version": ""
 }

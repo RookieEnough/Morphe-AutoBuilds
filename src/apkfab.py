@@ -45,12 +45,21 @@ def _fetch(url: str):
     return None
 
 
-def _app_url(config: Dict) -> Optional[str]:
-    slug = (config.get("slug") or config.get("name") or "").strip()
+def _app_urls(config: Dict) -> list[str]:
+    """Return ordered unique APKFab app URLs from primary slug and synthesized aliases."""
     package = (config.get("package") or "").strip()
-    if not slug or not package:
-        return None
-    return f"https://apkfab.com/{quote(slug, safe='')}/{package}"
+    if not package:
+        return []
+    slugs = [config.get("slug"), config.get("name"), *(config.get("aliases") or [])]
+    return [
+        f"https://apkfab.com/{quote(str(s).strip(), safe='')}/{package}"
+        for s in dict.fromkeys(str(s).strip() for s in slugs if s and str(s).strip())
+    ]
+
+
+def _app_url(config: Dict) -> Optional[str]:
+    urls = _app_urls(config)
+    return urls[0] if urls else None
 
 
 def _versions_match(found: str, requested: str) -> bool:
@@ -93,20 +102,26 @@ def get_latest_version(app_name: str, config: Dict) -> Optional[str]:
 
 
 def get_download_link(version: str, app_name: str, config: Dict) -> Optional[str]:
-    base = _app_url(config)
-    if not base:
+    bases = _app_urls(config)
+    if not bases:
         return None
 
     # The versions page lists every version with its download sha1.
     # The app page also embeds a version history, so fall back to it.
+    base = None
     soup = None
-    for page_url in (base + "/versions", base):
-        res = _fetch(page_url)
-        if res:
-            soup = BeautifulSoup(res.content, "html.parser")
-            if soup.select(".version_history > div.list"):
-                break
-    if soup is None:
+    for candidate_base in bases:
+        for page_url in (candidate_base + "/versions", candidate_base):
+            res = _fetch(page_url)
+            if res:
+                candidate_soup = BeautifulSoup(res.content, "html.parser")
+                if candidate_soup.select(".version_history > div.list"):
+                    base = candidate_base
+                    soup = candidate_soup
+                    break
+        if soup is not None:
+            break
+    if soup is None or base is None:
         logging.warning(f"APKFab: could not load pages for {app_name}")
         return None
 

@@ -247,6 +247,15 @@ def get_supported_versions(package_name: str, cli: str, patches: str) -> Optiona
     # args, missing patches, etc.) so we can decide what to do.
     output = run_process(cmd, capture=True, silent=True, check=False)
 
+    # Morphe CLI omits disabled-by-default patches and experimental targets
+    # unless -u (--count-unused-patches) and -x (--include-experimental) are passed.
+    if is_morphe_cli and (not output or len(output.splitlines()) <= 2):
+        retry_out = run_process([*cmd, "-u", "-x"], capture=True, silent=True, check=False)
+        if retry_out and len(retry_out.splitlines()) > 2:
+            retry_first = retry_out.splitlines()[0].strip().lower()
+            if 'usage:' not in retry_first and 'unmatched argument' not in retry_first and 'error' not in retry_first:
+                output = retry_out
+
     if not output:
         logging.warning("No output returned from list-versions command")
         return None
@@ -323,13 +332,19 @@ def get_supported_version(package_name: str, cli: str, patches: str) -> Optional
     versions = get_supported_versions(package_name, cli, patches)
     return versions[0] if versions else None
 
+def _sanitize_filename(name: str) -> str:
+    """Replace OS-reserved characters so titles like 'SoundCloud: ...' work cross-platform."""
+    cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', unquote(name)).strip(" .")
+    return cleaned or "download.apk"
+
+
 def extract_filename(response, fallback_url=None) -> str:
     cd = response.headers.get('content-disposition')
     if cd:
         _, params = parse_header(cd)
         filename = params.get('filename') or params.get('filename*')
         if filename:
-            return unquote(filename)
+            return _sanitize_filename(filename)
 
     parsed = urlparse(response.url)
     query_params = parse_qs(parsed.query)
@@ -338,10 +353,10 @@ def extract_filename(response, fallback_url=None) -> str:
         _, params = parse_header(unquote(rcd[0]))
         filename = params.get('filename') or params.get('filename*')
         if filename:
-            return unquote(filename)
+            return _sanitize_filename(filename)
 
     path = urlparse(fallback_url or response.url).path
-    return unquote(Path(path).name)
+    return _sanitize_filename(Path(path).name)
 
 def gh_api_request(endpoint: str) -> dict:
     """Make a GitHub API request using the 'gh' CLI as it handles tokens more robustly in Actions"""
@@ -473,6 +488,23 @@ def detect_codeberg_release(user: str, repo: str, tag: str) -> dict:
         raise ValueError(f"Unexpected Codeberg release response shape for {user}/{repo}/{tag}")
     return normalize_release(data.get("tag_name"), data.get("published_at"), data.get("assets") or [])
 
+def _select_release_by_tag(releases: list[dict], tag: str, user: str, repo: str) -> dict:
+    """Pick the matching newest release dict for '', 'dev', or 'prerelease'."""
+    if not releases:
+        raise ValueError(f"No releases found for {user}/{repo}")
+    if tag == "":
+        return max(releases, key=lambda x: x['created_at'])
+    if tag == "dev":
+        devs = [r for r in releases if 'dev' in r['tag_name'].lower()]
+        if not devs:
+            raise ValueError(f"No dev release found for {user}/{repo}")
+        return max(devs, key=lambda x: x['created_at'])
+    pres = [r for r in releases if r['prerelease']]
+    if not pres:
+        raise ValueError(f"No prerelease found for {user}/{repo}")
+    return max(pres, key=lambda x: x['created_at'])
+
+
 def detect_github_release(user: str, repo: str, tag: str) -> dict:
     if tag == "latest":
         release_lookup = "latest"
@@ -499,23 +531,7 @@ def detect_github_release(user: str, repo: str, tag: str) -> dict:
                     if not isinstance(data, list):
                         # Handle case where API might return a single object (unlikely for /releases)
                         data = [data]
-                        
-                    if not data:
-                        raise ValueError(f"No releases found for {user}/{repo}")
-                    
-                    if tag == "":
-                        release = max(data, key=lambda x: x['created_at'])
-                    elif tag == "dev":
-                        devs = [r for r in data if 'dev' in r['tag_name'].lower()]
-                        if not devs:
-                            raise ValueError(f"No dev release found for {user}/{repo}")
-                        release = max(devs, key=lambda x: x['created_at'])
-                    else:
-                        pres = [r for r in data if r['prerelease']]
-                        if not pres:
-                            raise ValueError(f"No prerelease found for {user}/{repo}")
-                        release = max(pres, key=lambda x: x['created_at'])
-                    return release
+                    return _select_release_by_tag(data, tag, user, repo)
                 else:
                     data = gh_api_request(f"repos/{user}/{repo}/releases/tags/{tag}")
                     return data
@@ -526,6 +542,9 @@ def detect_github_release(user: str, repo: str, tag: str) -> dict:
                 if tag == "latest":
                     release = repo_obj.get_latest_release()
                     return release.raw_data
+                if tag in ["", "dev", "prerelease"]:
+                    releases = [r.raw_data for r in repo_obj.get_releases()[:20]]
+                    return _select_release_by_tag(releases, tag, user, repo)
                 return repo_obj.get_release(tag).raw_data
                     
         except Exception as e:
@@ -701,6 +720,26 @@ def download_abis(path: Path) -> set[str]:
     except Exception:
         pass
     return abis
+
+
+def required_abis_for_arch(arch: str | None) -> set[str]:
+    """Return the native ABI set required for a target build architecture."""
+    normalized = (arch or "universal").strip() or "universal"
+    if normalized in ("universal", "noarch"):
+        return {"arm64-v8a"}
+    return {normalized}
+
+
+def has_required_abis(path: Path, arch: str | None) -> tuple[bool, set[str]]:
+    """Check whether ``path`` satisfies ``arch`` based on observable native ABIs.
+
+    Empty ABI set means no native libraries were detected (noarch/Java-only
+    or libraries inside a nested base APK), which is accepted per ``download_abis``.
+    """
+    abis = download_abis(path)
+    if not abis:
+        return True, abis
+    return required_abis_for_arch(arch).issubset(abis), abis
 
 
 def combine_bundles(paths: list[Path], out_path: Path) -> Path | None:

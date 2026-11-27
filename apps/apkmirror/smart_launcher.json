@@ -4,7 +4,7 @@
     "release_prefix": "smart-launcher-6-‧-home-screen",
     "type": "BUNDLE", 
     "arch": "arm64-v8a",
-    "dpi": "480dpi",
+    "dpi": "480-640dpi",
     "package" : "ginlemon.flowerfree",
     "version" : ""
 }

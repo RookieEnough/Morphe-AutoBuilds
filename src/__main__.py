@@ -38,6 +38,21 @@ def _version_without_build(version: str) -> str:
     """Drop a trailing `` build <digits>`` or parenthetical build number."""
     return _BUILD_SUFFIX.sub("", version).strip()
 
+
+def _should_force_build_suffix_match(output: str | None, downloaded_version: str) -> bool:
+    """Return True when Morphe CLI applied 0 patches solely because the APK's
+    manifest version includes a trailing build suffix (e.g. '32.41.0(1667052)')
+    while its base version matches the downloaded target ('32.41.0')."""
+    if not output or not _APPLYING_ZERO_PATCHES.search(output):
+        return False
+    downloaded_base = utils.normalize_version(_version_without_build(downloaded_version))
+    for match in _FILTERING_PATCHES.finditer(output):
+        filtered = match.group(2).strip().rstrip(".")
+        base = _version_without_build(filtered)
+        if base != filtered and utils.normalize_version(base) == downloaded_base:
+            return True
+    return False
+
 def _unpatched_build_reason(output: str | None, downloaded_version: str) -> str | None:
     """Return why a zero-exit patch CLI run must not be signed, or None to accept.
 
@@ -152,6 +167,7 @@ def run_build(app_name: str, source: str, arch: str = "universal") -> str:
         downloader.download_aptoide,
         downloader.download_uptodown,
         downloader.download_apkfab,
+        downloader.download_androidapksbox,
         downloader.download_github,
         downloader.download_codeberg,
         downloader.download_apkcombo,
@@ -177,9 +193,8 @@ def run_build(app_name: str, source: str, arch: str = "universal") -> str:
         # "universal" produces an APK that refuses to install on 64-bit-only
         # devices. No ABI evidence (no visible splits or libraries) is not
         # a rejection; the post-merge guard below is the backstop.
-        abis = utils.download_abis(apk_path)
-        required_abis = {"arm64-v8a"} if arch == "universal" else {arch}
-        if abis and not required_abis.issubset(abis):
+        ok_abi, abis = utils.has_required_abis(apk_path, arch)
+        if not ok_abi:
             logging.warning(
                 f"Discarding download from {method.__name__}: it provides ABIs "
                 f"{sorted(abis)}, which do not cover {arch}; trying next source"
@@ -363,6 +378,12 @@ def run_build(app_name: str, source: str, arch: str = "universal") -> str:
                     *exclude_patches, *include_patches
                 ]
                 cli_output = utils.run_process(morphe_cmd, capture=True, stream=True)
+                if _should_force_build_suffix_match(cli_output, version):
+                    logging.info(
+                        f"Retrying Morphe patch with -f because APK manifest appends a build suffix to {version}"
+                    )
+                    output_apk.unlink(missing_ok=True)
+                    cli_output = utils.run_process([*morphe_cmd, "-f"], capture=True, stream=True)
             else:
                 logging.info("🔧 Using ReVanced patching system...")
                 cli_name = Path(cli).name.lower()

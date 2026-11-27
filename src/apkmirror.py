@@ -1,5 +1,6 @@
 import re
 import json
+import time
 import logging
 from bs4 import BeautifulSoup
 from urllib.parse import quote
@@ -8,6 +9,7 @@ from src import session
 base_url = "https://www.apkmirror.com"
 _blocked_by_cloudflare = False
 _use_trawl = False
+_main_page_cache: dict[str, tuple[int, bytes]] = {}
 
 
 class ApkMirrorBlocked(RuntimeError):
@@ -77,6 +79,13 @@ def _cf_get(url, **kwargs):
             logging.debug("APKMirror browser-service retry failed: %s", exc)
 
     response = session.get(url, **kwargs)
+    for backoff in (5, 10):
+        if response.status_code != 429:
+            break
+        delay = min(max(int(response.headers.get("Retry-After") or backoff), backoff), 15)
+        logging.info(f"APKMirror rate-limited (429) on {url}; retrying in {delay}s")
+        time.sleep(delay)
+        response = session.get(url, **kwargs)
     if _is_challenge(response):
         # CI jobs provide Trawl, the same browser-rendering service used by
         # rvb.  It supplies ordinary page HTML/cookies; if it is absent or
@@ -114,15 +123,25 @@ def extract_base_version(version: str) -> str:
     return version
 
 
+def _get_main_page(main_url: str) -> tuple[int, bytes]:
+    """Fetch an app main page once per get_download_link invocation."""
+    if main_url in _main_page_cache:
+        return _main_page_cache[main_url]
+    response = _cf_get(main_url)
+    result = (response.status_code, response.content)
+    _main_page_cache[main_url] = result
+    return result
+
+
 def get_build_number_for_version(version: str, config: dict) -> tuple[str | None, str]:
     """Fetch build number for a specific version from APKMirror.
     Returns (build_number, format_type) where format_type is 'parentheses' or 'build_suffix'.
     Returns the LOWEST build number found, since patches are typically made for initial builds."""
     try:
         main_url = f"{base_url}/apk/{config['org']}/{config['name']}/"
-        response = _cf_get(main_url)
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.content, "html.parser")
+        status, content = _get_main_page(main_url)
+        if status == 200:
+            soup = BeautifulSoup(content, "html.parser")
             # Collect all build numbers for this version
             builds_found = []
             for link in soup.find_all('a', href=True):
@@ -223,8 +242,15 @@ def discover_app_main_url(config: dict) -> str | None:
         logging.debug(f"Error in discover_app_main_url: {e}")
         return None
 
-def _scrape_release_url_from_soup(soup, version: str, config: dict, build_number: str = None, build_format: str = None) -> str | None:
-    """Scan a BeautifulSoup-parsed main app page for a release link matching the version.
+def _scrape_release_url_from_soup(
+    soup,
+    version: str,
+    config: dict,
+    build_number: str = None,
+    build_format: str = None,
+    allow_prerelease: bool = False,
+) -> str | None:
+    """Scan a BeautifulSoup-parsed APKMirror page for a release link matching the version.
     Returns the full release page URL if found, else None."""
     # Generate version variations (original + stripped of leading zeros like 26.04.05 -> 26.4.5)
     version_variants = [version]
@@ -233,43 +259,75 @@ def _scrape_release_url_from_soup(soup, version: str, config: dict, build_number
         version_variants.append(clean_v)
 
     app_slug = (config.get('name') or config.get('app_slug') or '').lower()
+    org_slug = (config.get('org') or '').lower()
+    release_prefix = (config.get('release_prefix') or '').lower()
+    exclude = (config.get('exclude_variant') or '').lower()
 
     for v in version_variants:
         version_parts = v.split('.')
         min_depth = 2 if len(version_parts) >= 2 else 1
-        
+
         for i in range(len(version_parts), min_depth - 1, -1):
             current_ver = ".".join(version_parts[:i])
             current_ver_dash = "-".join(version_parts[:i])
-            
+
             candidates = []
             for link in soup.find_all('a', href=True):
                 href = link['href'].lower()
                 if not href.startswith('/apk/'):
                     continue
-                # Ensure the link belongs to this app
-                if app_slug and app_slug not in href:
+                # Ensure the link belongs to this app (prevents matching sidebar popular links)
+                belongs = (
+                    (app_slug and f"/{app_slug}/" in href)
+                    or (org_slug and f"/apk/{org_slug}/" in href)
+                    or (release_prefix and release_prefix in href)
+                )
+                if (app_slug or org_slug or release_prefix) and not belongs:
                     continue
-                # Check version pattern properly bounded
+
+                if exclude and exclude in href:
+                    continue
+                if not allow_prerelease and re.search(r'(?:^|[/-])(?:beta|alpha)(?:[/-]|$)', href):
+                    continue
+
+                # Match bounded version, also allowing directly appended 5+ digit versionCodes
+                # like busuu's 32-41-01667052-release slug.
                 ver_pattern = re.escape(current_ver_dash)
-                if re.search(rf'(?:^|[/-]){ver_pattern}(?:[/-]|$)', href):
-                    # Skip excluded variants (e.g., beta when config says exclude_variant=beta)
-                    exclude = config.get('exclude_variant', '')
-                    if exclude and exclude.lower() in href.lower():
-                        continue
-                    priority = 0 if href.rstrip('/').endswith('-release') else 1
-                    candidates.append((priority, link['href']))
-            
+                if not re.search(rf'(?:^|[/-]){ver_pattern}(?:[/-]|\d{{5,}}(?=[/-]|$)|$)', href):
+                    continue
+
+                tier = 1
+                if build_number and i == len(version_parts):
+                    if build_format == 'build_suffix':
+                        if not re.search(rf'{ver_pattern}-build-0*{int(build_number)}(?:[/-]|$)', href):
+                            continue
+                        tier = 0
+                    elif (
+                        f"{current_ver_dash}{build_number}" in href
+                        or f"{current_ver_dash}-{build_number}" in href
+                        or f"({build_number})" in link.get_text()
+                    ):
+                        tier = 0
+
+                priority = 0 if href.rstrip('/').endswith('-release') else 1
+                candidates.append((tier, priority, len(link['href']), link['href']))
+
             if candidates:
-                candidates.sort(key=lambda x: (x[0], len(x[1])))
-                chosen = candidates[0][1]
+                candidates.sort()
+                chosen = candidates[0][3]
                 full_url = base_url + chosen
                 logging.info(f"✓ Found release page on main listing for {current_ver}: {full_url}")
                 return full_url
-    
+
     return None
 
-def find_release_page_from_main(version: str, config: dict, build_number: str = None, build_format: str = None) -> str | None:
+def find_release_page_from_main(
+    version: str,
+    config: dict,
+    build_number: str = None,
+    build_format: str = None,
+    allow_prerelease: bool = False,
+) -> str | None:
     """Scrape the main app listing page on APKMirror to find the correct release page URL
     for a specific version. This avoids URL construction from config fields, which may not
     match APKMirror's actual URL slugs (e.g., 'duolingo' vs 'duolingo-language-lessons').
@@ -277,33 +335,57 @@ def find_release_page_from_main(version: str, config: dict, build_number: str = 
     Strategy:
     1. Try the configured main page (org/name from config)
     2. If that 404s, use APKMirror search to discover the correct main page URL
-    3. Scrape release links from whichever main page works
+    3. Search APKMirror releases directly (finds older releases off page 1)
     
     Returns the full release page URL if found, or None if scraping fails."""
     try:
         # Step 1: Try configured main page first (works for most apps)
         main_url = f"{base_url}/apk/{config['org']}/{config['name']}/"
-        response = _cf_get(main_url)
+        main_status, main_content = _get_main_page(main_url)
         
-        soup = None
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.content, "html.parser")
-            result = _scrape_release_url_from_soup(soup, version, config, build_number, build_format)
+        if main_status == 200:
+            soup = BeautifulSoup(main_content, "html.parser")
+            result = _scrape_release_url_from_soup(
+                soup, version, config, build_number, build_format, allow_prerelease
+            )
             if result:
                 return result
             logging.debug(f"Main page accessible but no version match: {main_url}")
         else:
-            logging.info(f"Configured main page returned {response.status_code}: {main_url}")
+            logging.info(f"Configured main page returned {main_status}: {main_url}")
         
-        # Step 2: If configured main page failed or didn't yield a match, try discovering
-        # the correct main page via APKMirror's search endpoint
-        discovered_url = discover_app_main_url(config)
-        if discovered_url and discovered_url != main_url:
-            logging.info(f"Trying discovered main page: {discovered_url}")
-            response = _cf_get(discovered_url)
-            if response.status_code == 200:
-                soup = BeautifulSoup(response.content, "html.parser")
-                result = _scrape_release_url_from_soup(soup, version, config, build_number, build_format)
+        # Step 2: Only discover alternate main URL when configured main_url failed
+        if main_status != 200:
+            discovered_url = discover_app_main_url(config)
+            if discovered_url and discovered_url != main_url:
+                logging.info(f"Trying discovered main page: {discovered_url}")
+                d_resp = _cf_get(discovered_url)
+                if d_resp.status_code == 200:
+                    d_soup = BeautifulSoup(d_resp.content, "html.parser")
+                    result = _scrape_release_url_from_soup(
+                        d_soup, version, config, build_number, build_format, allow_prerelease
+                    )
+                    if result:
+                        return result
+
+        # Step 3: Release-level search fallback for older versions off page 1
+        ver_query = f"{version} build {build_number}" if (build_number and build_format == "build_suffix") else version
+        queries = []
+        if config.get("package"):
+            queries.append(f"{config['package']} {ver_query}")
+        if config.get("name"):
+            queries.append(f"{config['name'].replace('-', ' ')} {ver_query}")
+        for q in dict.fromkeys(queries):
+            if _blocked_by_cloudflare:
+                break
+            search_url = f"{base_url}/?post_type=app_release&searchtype=apk&s={quote(q)}"
+            logging.info(f"Searching APKMirror releases: {search_url}")
+            s_resp = _cf_get(search_url)
+            if s_resp.status_code == 200:
+                s_soup = BeautifulSoup(s_resp.content, "html.parser")
+                result = _scrape_release_url_from_soup(
+                    s_soup, version, config, build_number, build_format, allow_prerelease
+                )
                 if result:
                     return result
         
@@ -317,12 +399,14 @@ def find_release_page_from_main(version: str, config: dict, build_number: str = 
 def get_download_link(version: str, app_name: str, config: dict, arch: str = None) -> str:
     global _blocked_by_cloudflare
     _blocked_by_cloudflare = False
+    _main_page_cache.clear()
     if not version:
         logging.error(f"No version provided for {app_name}")
         return None
     # Strip variant suffix from CLI version string (e.g., "18.0.3.954559732-release-arm64-v8a" -> "18.0.3.954559732")
     # The variant info is used for filtering, not URL construction.
     original_version = version
+    want_prerelease = bool(re.search(r'(?:^|[-_. ])(?:beta|alpha)(?:$|[-_. ])', original_version, re.IGNORECASE))
     version = extract_base_version(version)
     if version != original_version:
         logging.info(f"Stripped variant from version: {original_version} -> {version}")
@@ -354,6 +438,9 @@ def get_download_link(version: str, app_name: str, config: dict, arch: str = Non
             build_number, build_format = get_build_number_for_version(version, config)
             if build_number:
                 logging.info(f"Found build number {build_number} for version {version} (format: {build_format})")
+
+    if _blocked_by_cloudflare:
+        return None
     
     version_parts = version.split('.')
     found_soup = None
@@ -363,7 +450,9 @@ def get_download_link(version: str, app_name: str, config: dict, arch: str = Non
     # This is more reliable than constructing URLs from config fields, because
     # APKMirror's actual URL slugs often differ from config values
     # (e.g., 'duolingo' slug vs 'duolingo-language-lessons' actual release name)
-    scraped_url = find_release_page_from_main(version, config, build_number, build_format)
+    scraped_url = find_release_page_from_main(
+        version, config, build_number, build_format, allow_prerelease=want_prerelease
+    )
     if scraped_url:
         logging.info(f"Trying scraped release URL: {scraped_url}")
         try:
@@ -545,12 +634,12 @@ def get_download_link(version: str, app_name: str, config: dict, arch: str = Non
             rows = table.find_all('div', class_='table-row')
     download_page_url = None
     
-    def _row_matches(row_text: str) -> bool:
+    def _row_matches(row_text: str, type_override: str | None = None) -> bool:
         r = row_text.lower()
         if 'variant' in r and 'arch' in r and 'version' in r:
             return False  # Skip header row
             
-        c_type = (config.get('type') or '').lower()
+        c_type = (type_override if type_override is not None else (config.get('type') or '')).lower()
         if c_type and c_type not in r:
             return False
         
@@ -566,7 +655,17 @@ def get_download_link(version: str, app_name: str, config: dict, arch: str = Non
             # All DPIs acceptable for universal/nodpi/bundle
             pass
         elif c_dpi not in r:
-            return False
+            dpi_num = re.fullmatch(r'(\d+)dpi', c_dpi)
+            if dpi_num:
+                target_dpi = int(dpi_num.group(1))
+                in_range = any(
+                    int(lo) <= target_dpi <= int(hi)
+                    for lo, hi in re.findall(r'(\d+)-(\d+)dpi', r)
+                )
+                if not in_range:
+                    return False
+            else:
+                return False
 
         return True
 
@@ -593,6 +692,19 @@ def get_download_link(version: str, app_name: str, config: dict, arch: str = Non
             if _row_matches(row_text):
                 download_page_url = _extract_row_link(row)
                 if download_page_url:
+                    break
+
+    # Fall back from APK to BUNDLE on the exact release page when an app
+    # migrated from standalone APKs to split APKM bundles (future-proofing).
+    if not download_page_url and correct_version_page and (config.get('type') or '').lower() == 'apk':
+        for row in rows:
+            row_text = row.get_text()
+            if 'variant' in row_text.lower() and 'arch' in row_text.lower():
+                continue
+            if (version in row_text or version.replace('.', '-') in row_text) and _row_matches(row_text, type_override='bundle'):
+                download_page_url = _extract_row_link(row)
+                if download_page_url:
+                    logging.info(f"APKMirror: using BUNDLE variant for {app_name} {version}")
                     break
     
     # If exact version not found, try to find any variant matching criteria

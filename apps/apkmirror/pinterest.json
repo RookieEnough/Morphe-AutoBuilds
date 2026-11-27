@@ -3,7 +3,7 @@
   "name": "pinterest-pinterest",
   "type": "APK",
   "arch": "universal",
-  "dpi": "120-640dpi",
+  "dpi": "nodpi",
   "package": "com.pinterest",
   "version": ""
 }
