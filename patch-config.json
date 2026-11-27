@@ -343,6 +343,10 @@
     {
       "app_name": "fxfile",
       "source": "heval"
+    },
+    {
+      "app_name": "mirinae",
+      "source": "Hoo"
     }
   ]
 }

@@ -1,15 +1,16 @@
 [
     {
-      "name": "morphe-patches"
+        "name": "morphe-patches"
     },
     {
-      "user": "MorpheApp",
-      "repo": "morphe-cli",
-      "tag": "latest"
-   },
+        "user": "MorpheApp",
+        "repo": "morphe-cli",
+        "tag": "latest"
+    },
     {
-      "user": "hoo-dles",
-      "repo": "morphe-patches",
-      "tag": "latest"
+        "provider": "codeberg",
+        "user": "RookieZ",
+        "repo": "campus-android-lab",
+        "tag": "latest"
     }
 ]
