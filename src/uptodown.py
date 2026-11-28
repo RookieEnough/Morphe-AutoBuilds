@@ -14,7 +14,7 @@ from urllib.parse import urljoin
 import requests as plain_requests
 from bs4 import BeautifulSoup
 
-from src import session, flaresolverr, utils
+from src import session, flaresolverr, utils, uptodown_api
 
 
 LOCALES = ("en", "de", "fr", "in", "it", "ru", "jp", "kr")
@@ -195,6 +195,29 @@ def _variant_file_id(base_url: str, data_code: str, version_page: BeautifulSoup,
     return fallback_id
 
 
+def _file_id_from_page(soup: BeautifulSoup) -> str | None:
+    """Return the main file id the page's download button points at."""
+    for selector in ("#detail-download-button", "#detail-app-name"):
+        node = soup.select_one(selector)
+        if node and node.get("data-file-id"):
+            return str(node["data-file-id"]).strip()
+    return None
+
+
+def _api_download_url(app_code: str, file_id: str | None, app_name: str) -> str | None:
+    """Resolve a file id through Uptodown's mobile API (Turnstile-free)."""
+    if not app_code or not file_id:
+        return None
+    try:
+        link = uptodown_api.resolve_download_url(app_code, file_id)
+    except Exception as exc:  # never let an API problem break the HTML fallback
+        logging.debug("Uptodown mobile API resolution failed for %s: %s", app_name, exc)
+        return None
+    if link:
+        logging.info("Uptodown resolved %s file %s via mobile API", app_name, file_id)
+    return link
+
+
 def get_download_link(version: str, app_name: str, config: dict) -> str | None:
     if not version:
         return None
@@ -227,9 +250,20 @@ def get_download_link(version: str, app_name: str, config: dict) -> str | None:
             if not page_response:
                 continue
             version_soup = BeautifulSoup(page_response.content, "html.parser")
-            # The main file is often a split/XAPK. Resolve the public variants
-            # catalog first, then use its -x page just like rvb.
+            # The mobile API only needs the numeric app code and a file id, and
+            # it is not behind the Turnstile challenge that now guards the web
+            # download flow, so try it before any HTML scraping.  The variants
+            # catalog gives the arch-correct file (often a split/XAPK) first.
             variant_id = _variant_file_id(base_url, data_code, version_soup, config.get("arch", "universal"))
+            link = _api_download_url(data_code, variant_id, app_name)
+            if link:
+                return link
+            link = _api_download_url(data_code, _file_id_from_page(version_soup), app_name)
+            if link:
+                return link
+
+            # Legacy web flow, kept as a fallback for environments where the
+            # mobile API is unavailable (and for FlareSolverr-equipped runs).
             if variant_id:
                 variant_url = f"{base_url}/download/{variant_id}-x"
                 variant_response = _get(variant_url)
