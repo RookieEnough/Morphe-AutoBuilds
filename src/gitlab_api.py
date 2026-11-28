@@ -137,13 +137,58 @@ def list_package_files() -> List[Dict[str, Any]]:
 
 
 def _package_id() -> int:
-    """Get the package ID for morphe-apks."""
+    """Get the package ID for morphe-apks (cached; it never changes)."""
+    global _cached_package_id
+    if _cached_package_id is not None:
+        return _cached_package_id
     r = api("GET", "/packages?package_name=morphe-apks&per_page=1")
     r.raise_for_status()
     pkgs = r.json()
     if pkgs:
-        return pkgs[0]["id"]
+        _cached_package_id = int(pkgs[0]["id"])
+        return _cached_package_id
     raise RuntimeError("morphe-apks package not found")
+
+
+_cached_package_id: Optional[int] = None
+
+
+def dedupe_package_files() -> int:
+    """Collapse duplicate package-file entries, keeping the newest copy per name.
+
+    The GitLab generic registry accepts repeated uploads of the same filename as
+    separate entries instead of replacing them, so a few hundred publishes leave
+    hundreds of duplicate rows behind (observed: 495 rows for 149 unique files).
+    Only the newest entry per name is kept: that is the last upload, i.e. the
+    current APK bytes.
+    """
+    files = list_package_files()
+    newest: Dict[str, Dict[str, Any]] = {}
+    for f in files:
+        name = f.get("file_name", "")
+        if not name:
+            continue
+        current = newest.get(name)
+        if current is None or int(f.get("id") or 0) > int(current.get("id") or 0):
+            newest[name] = f
+    deleted = 0
+    package_id = _package_id()
+    for f in files:
+        name = f.get("file_name", "")
+        keep = newest.get(name)
+        if not keep or f.get("id") == keep.get("id"):
+            continue
+        r = api("DELETE", f"/packages/{package_id}/package_files/{f['id']}")
+        if r.status_code in (200, 204, 404):
+            deleted += 1
+        else:
+            _log.warning(
+                f"Could not delete duplicate package file {name} (id {f.get('id')}): "
+                f"{r.status_code}"
+            )
+    if deleted:
+        _log.info(f"Removed {deleted} duplicate package file entr(ies)")
+    return deleted
 
 
 def delete_package_file(filename: str,
@@ -190,18 +235,40 @@ def move_tag(tag: str, ref: str) -> None:
     _log.info(f"Tag '{tag}' now points at {ref[:8]}")
 
 
-def ensure_release(tag: str, name: str, description: str, ref: str) -> Dict[str, Any]:
-    """Create the release if missing, else update its name/description."""
-    move_tag(tag, ref)
+def ensure_release(
+    tag: str,
+    name: str,
+    description: str,
+    ref: str,
+    move_tag_existing: bool = False,
+) -> Dict[str, Any]:
+    """Create the release if missing, else update only its name/description.
+
+    Deleting and recreating a tag deletes the GitLab release attached to it and
+    wipes every asset link, which is how a single-app publish could remove all
+    the other apps (and, if the run died mid-way, the whole release). So an
+    existing tag is left alone by default; only a missing tag is created.
+    ``move_tag_existing=True`` restores the old destructive behaviour and is
+    reserved for explicit maintenance.
+    """
+    tag_exists = api("GET", f"/repository/tags/{tag}").status_code == 200
+    if not tag_exists:
+        r = api("POST", "/repository/tags", json={"tag_name": tag, "ref": ref})
+        if r.status_code not in (200, 201):
+            raise RuntimeError(f"Could not create tag {tag}: {r.status_code} {r.text[:200]}")
+        _log.info(f"Created tag '{tag}' at {ref[:8]}")
+    elif move_tag_existing:
+        move_tag(tag, ref)
+
     r = api("GET", f"/releases/{tag}")
     if r.status_code == 200:
         r = api("PUT", f"/releases/{tag}",
                 json={"name": name, "description": description})
         r.raise_for_status()
-        _log.info(f"Updated release '{tag}'")
+        _log.info(f"Updated release '{tag}' (tag untouched)")
         return r.json()
     r = api("POST", "/releases",
-            json={"name": name, "tag_name": tag, "description": description, "ref": ref})
+            json={"name": name, "tag_name": tag, "description": description})
     r.raise_for_status()
     _log.info(f"Created release '{tag}'")
     return r.json()

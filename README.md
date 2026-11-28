@@ -138,6 +138,20 @@ Located in the `apps/` directory. Example for `apps/apkmirror/youtube.json`:
 
 ```
 
+### GitLab release updates
+
+[`scripts/gitlab_publish_release.py`](scripts/gitlab_publish_release.py) updates
+the GitLab `latest` release incrementally:
+
+* the `latest` tag is **never moved or deleted** during a publish — in GitLab
+  that deletes the release and every asset link on it;
+* only the rebuilt APKs' links are added or replaced; other apps stay untouched;
+* links lost by an earlier failed run are repaired from the package registry;
+* superseded versions of the *same* app/architecture/patch build are pruned, and
+  duplicate package-registry entries are collapsed;
+* the post-publish check fails if any registry APK has no release link or if the
+  manifest references an APK that no longer exists.
+
 ### Uptodown downloads (mobile API)
 
 Uptodown moved its website download flow behind Cloudflare Turnstile in
