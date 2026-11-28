@@ -689,7 +689,7 @@ def get_download_link(version: str, app_name: str, config: dict, arch: str = Non
         if t_arch in ['universal', 'noarch']:
             if not any(a in r for a in ['universal', 'noarch', 'arm64-v8a', 'armeabi-v7a', 'arm64', 'arm']):
                 return False
-        elif t_arch not in r:
+        elif t_arch not in r and 'universal' not in r and 'noarch' not in r:
             return False
 
         c_dpi = (config.get('dpi') or 'nodpi').lower()
@@ -727,7 +727,7 @@ def get_download_link(version: str, app_name: str, config: dict, arch: str = Non
         r = row_text.lower()
         t_arch = (target_arch or 'universal').lower()
         if t_arch not in ('universal', 'noarch'):
-            return 0
+            return 0 if t_arch in r else 1
         if 'universal' in r or 'noarch' in r:
             return 0
         if 'arm64-v8a' in r or 'arm64' in r:

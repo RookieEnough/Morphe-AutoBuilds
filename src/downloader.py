@@ -23,6 +23,24 @@ class UnknownPatchCompatibilityError(ValueError):
     build with silently skipped patches, so the build must fail loudly instead
     of falling back to latest."""
 
+
+_rejected_abis: set[str] = set()
+
+
+def clear_rejected_abis() -> None:
+    _rejected_abis.clear()
+
+
+def record_rejected_abis(abis) -> None:
+    for abi in abis or ():
+        norm = utils._normalize_abi(abi)
+        if norm in utils.KNOWN_ABIS and norm not in ("x86", "x86_64"):
+            _rejected_abis.add(norm)
+
+
+def get_rejected_abis() -> set[str]:
+    return set(_rejected_abis)
+
 def download_resource(url: str, name: str = None) -> Path:
     last_error = None
     for attempt in range(2):
@@ -308,6 +326,7 @@ def download_platform(
                         f"Discarding download from {platform} for {app_name} v{version}: "
                         f"it provides ABIs {sorted(abis)}, which do not cover {arch or 'universal'}; trying next candidate"
                     )
+                    record_rejected_abis(abis)
                     filepath.unlink(missing_ok=True)
                     last_error = ValueError(f"Incompatible ABIs {sorted(abis)} for {app_name} v{version}")
                     continue

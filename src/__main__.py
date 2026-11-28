@@ -199,6 +199,7 @@ def run_build(app_name: str, source: str, arch: str = "universal") -> str:
                 f"Discarding download from {method.__name__}: it provides ABIs "
                 f"{sorted(abis)}, which do not cover {arch}; trying next source"
             )
+            downloader.record_rejected_abis(abis)
             apk_path.unlink(missing_ok=True)
             continue
         input_apk, version, candidates = apk_path, ver, cands
@@ -333,6 +334,8 @@ def run_build(app_name: str, source: str, arch: str = "universal") -> str:
                     f"{sorted(merged_abis)} native libraries; refusing to ship "
                     f"a build that 64-bit-only devices cannot install"
                 )
+                downloader.record_rejected_abis(merged_abis)
+                input_apk.unlink(missing_ok=True)
                 continue
             if arch != "universal" and arch not in merged_abis:
                 logging.error(
@@ -340,6 +343,8 @@ def run_build(app_name: str, source: str, arch: str = "universal") -> str:
                     f"{sorted(merged_abis)} native libraries, not {arch}; "
                     f"refusing to ship it under the {arch} label"
                 )
+                downloader.record_rejected_abis(merged_abis)
+                input_apk.unlink(missing_ok=True)
                 continue
 
         # Validate APK integrity (safety net: downloads were already validated,
@@ -483,6 +488,35 @@ def run_build(app_name: str, source: str, arch: str = "universal") -> str:
     # If we got here, every candidate version failed.
     return None
 
+def _build_arches_with_fallback(app_name: str, source: str, arches: list[str]) -> list[str]:
+    """Build requested architectures, falling back to available ABI variants
+    if an automatic universal build fails solely due to single-ABI downloads."""
+    downloader.clear_rejected_abis()
+    built_apks: list[str] = []
+    for arch in arches:
+        logging.info(f"🔨 Building {app_name} for {arch} architecture...")
+        apk_path = run_build(app_name, source, arch)
+        if apk_path:
+            built_apks.append(apk_path)
+            print(f"✅ Built {arch} version: {Path(apk_path).name}")
+
+    if not built_apks and arches == ["universal"]:
+        rejected = downloader.get_rejected_abis()
+        fallback_arches = [a for a in ("arm64-v8a", "armeabi-v7a") if a in rejected]
+        if fallback_arches:
+            logging.warning(
+                f"Universal build for {app_name} could not cover 64-bit+universal ABIs; "
+                f"falling back to available variant architecture(s): {fallback_arches}"
+            )
+            for alt_arch in fallback_arches:
+                logging.info(f"🔨 Building {app_name} for {alt_arch} architecture (variant fallback)...")
+                apk_path = run_build(app_name, source, alt_arch)
+                if apk_path:
+                    built_apks.append(apk_path)
+                    print(f"✅ Built {alt_arch} version: {Path(apk_path).name}")
+    return built_apks
+
+
 def main():
     app_name = getenv("APP_NAME")
     source = getenv("SOURCE")
@@ -504,14 +538,7 @@ def main():
                 arches = config["arches"]
                 break
         
-        # Build for each architecture
-        built_apks = []
-        for arch in arches:
-            logging.info(f"🔨 Building {app_name} for {arch} architecture...")
-            apk_path = run_build(app_name, source, arch)
-            if apk_path:
-                built_apks.append(apk_path)
-                print(f"✅ Built {arch} version: {Path(apk_path).name}")
+        built_apks = _build_arches_with_fallback(app_name, source, arches)
         
         # Summary
         print(f"\n🎯 Built {len(built_apks)} APK(s) for {app_name}:")
@@ -522,11 +549,12 @@ def main():
             exit(1)
         
     else:
-        # Fallback to single universal build
+        # Fallback to universal (and per-ABI variants if universal rejects single-ABI downloads)
         logging.warning("arch-config.json not found, building universal only")
-        apk_path = run_build(app_name, source, "universal")
-        if apk_path:
-            print(f"🎯 Final APK path: {apk_path}")
+        built_apks = _build_arches_with_fallback(app_name, source, ["universal"])
+        if built_apks:
+            for apk in built_apks:
+                print(f"🎯 Final APK path: {apk}")
         else:
             logging.error(f"❌ No APK built for {app_name}; failing the job.")
             exit(1)

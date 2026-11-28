@@ -171,6 +171,16 @@ def _api_match(versions, version: str, target_arch: str = "universal"):
     return matches[0] if matches else None
 
 
+def _record_unmatched_abis(versions, version: str, target_arch: str) -> None:
+    """Record ABIs available on APKPure when version exists but lacks target_arch."""
+    from src import downloader
+    for v in versions or ():
+        if not _version_name_matches((v.get("version_name") or "").strip(), version):
+            continue
+        if not _entry_matches_arch(v, target_arch):
+            downloader.record_rejected_abis(v.get("native_code") or [])
+
+
 def get_download_links(version: str, app_name: str, config: str) -> list[str]:
     """Return direct download URLs for matching ABI variants of this version."""
     package = config.get("package", "")
@@ -199,6 +209,7 @@ def get_download_links(version: str, app_name: str, config: str) -> list[str]:
                 urls = [urls[0]]
             logging.info(f"APKPure API: {len(urls)} variant download(s) for {app_name} v{version}")
             return urls
+        _record_unmatched_abis(versions, version, target_arch)
     return []
 
 
