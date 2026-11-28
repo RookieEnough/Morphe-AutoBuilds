@@ -197,8 +197,20 @@ def run_build(app_name: str, source: str, arch: str = "universal") -> str:
     version = None
     candidates: list[str] = []
     used_method = None
+    compat_errors: list[Exception] = []
     for method in download_methods:
-        apk_path, ver, cands = method(app_name, str(cli), str(patches), arch)
+        try:
+            apk_path, ver, cands = method(app_name, str(cli), str(patches), arch)
+        except downloader.UnknownPatchCompatibilityError as exc:
+            # Each mirror has its own app config, and they can disagree on the
+            # package id (stale APKMirror config vs the real package on the
+            # other mirrors). One source's package being unsupported must not
+            # abort the whole build: try the next source, which may use the
+            # package the patches actually target.
+            logging.warning(f"{method.__name__}: {exc}")
+            logging.warning("Trying the next source (it may use a different package id).")
+            compat_errors.append(exc)
+            continue
         if not apk_path:
             continue
         # A corrupt download must never reach the patcher: repair it, and if
@@ -232,6 +244,11 @@ def run_build(app_name: str, source: str, arch: str = "universal") -> str:
     if input_apk is None or not used_method or not version:
         logging.error(f"❌ Failed to download APK for {app_name}")
         logging.error("All download sources failed. Skipping this app.")
+        if compat_errors and len(compat_errors) == len(download_methods):
+            # Every source rejected the package as unsupported: surface the
+            # clear error instead of a generic "no download" so the patch
+            # source/config gets fixed.
+            raise compat_errors[-1]
         return None
 
     # Try the downloaded version first, then (if available) older compatible

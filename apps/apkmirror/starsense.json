@@ -1,9 +1,0 @@
-{
-  "org": "starsense",
-  "name": "starsense",
-  "type": "APK",
-  "arch": "universal",
-  "dpi": "nodpi",
-  "package": "com.celestron.starsense",
-  "version": ""
-}

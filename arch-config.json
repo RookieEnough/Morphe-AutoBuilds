@@ -27,7 +27,7 @@
   {
     "app_name": "pokecardex",
     "source": "almewty",
-    "arches": ["arm64-v8a", "armeabi-v7a"]
+    "arches": ["arm64-v8a"]
   },
   {
     "app_name": "messenger",

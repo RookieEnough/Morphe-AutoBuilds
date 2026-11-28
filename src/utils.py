@@ -135,6 +135,10 @@ def run_process(
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+        # Tool output can contain non-UTF-8 bytes (Java console encoding, app
+        # names with accents such as "Pokécardex"). Never let a stray byte turn
+        # into UnicodeDecodeError and abort a build.
+        errors="replace",
         shell=shell
     )
 

@@ -1,9 +1,0 @@
-{
-  "org": "lumina",
-  "name": "lumina",
-  "type": "APK",
-  "arch": "universal",
-  "dpi": "nodpi",
-  "package": "com.lumina.app",
-  "version": ""
-}
