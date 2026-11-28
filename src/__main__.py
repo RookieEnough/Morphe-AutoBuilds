@@ -86,6 +86,26 @@ def _unpatched_build_reason(output: str | None, downloaded_version: str) -> str 
             )
     return None
 
+def _write_build_meta(version_mode: str | None) -> None:
+    """Record how this build chose its app version.
+
+    record_build.py and merge_manifest.py propagate this into manifest.json.
+    check_app_updates.py uses it to rebuild a version-agnostic app when the app
+    itself ships a new version (store latest), while version-pinned apps are
+    still rebuilt only when the patches change.
+    """
+    try:
+        Path("build_meta.json").write_text(
+            json.dumps({
+                "version_mode": version_mode or "",
+                "version_agnostic": version_mode == "latest",
+            }),
+            encoding="utf-8",
+        )
+    except Exception as e:
+        logging.warning(f"Could not write build_meta.json: {e}")
+
+
 def run_build(app_name: str, source: str, arch: str = "universal") -> str:
     """Build APK for specific architecture"""
     download_files, name = downloader.download_required(source)
@@ -204,6 +224,9 @@ def run_build(app_name: str, source: str, arch: str = "universal") -> str:
             continue
         input_apk, version, candidates = apk_path, ver, cands
         used_method = method
+        # Record how the version was chosen (latest store vs patch-declared)
+        # while it is still known; build records persist it for the planner.
+        _write_build_meta(downloader.get_version_mode())
         break
 
     if input_apk is None or not used_method or not version:

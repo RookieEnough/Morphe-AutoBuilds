@@ -122,6 +122,18 @@ def main() -> int:
     resolved_version = extract_version_from_filename(apk_name)
 
     REC_DIR.mkdir(parents=True, exist_ok=True)
+    # build_meta.json is written by src/__main__.py right after the download:
+    # it records whether the version came from the store's "latest" (patches are
+    # version-agnostic) or from patch-declared compatibility. The planner needs
+    # that distinction to rebuild on app updates without looping on pinned apps.
+    version_agnostic = False
+    version_mode = ""
+    try:
+        meta = json.loads((Path("build_meta.json")).read_text(encoding="utf-8"))
+        version_mode = str(meta.get("version_mode") or "")
+        version_agnostic = bool(meta.get("version_agnostic"))
+    except Exception:
+        pass
     record = {
         "key": f"{app}|{src}|{arch}",
         "apk": apk_name,
@@ -129,6 +141,8 @@ def main() -> int:
         "app_name": app,
         "source": src,
         "arch": arch,
+        "version_mode": version_mode,
+        "version_agnostic": version_agnostic,
     }
 
     safe = f"{app}__{src}__{arch}".replace("/", "_")

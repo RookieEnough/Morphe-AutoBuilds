@@ -1,0 +1,15 @@
+[
+    {
+        "name": "logm1lo-patches"
+    },
+    {
+        "user": "MorpheApp",
+        "repo": "morphe-cli",
+        "tag": "latest"
+    },
+    {
+        "user": "logm1lo",
+        "repo": "logm1lo-patches",
+        "tag": "latest"
+    }
+]

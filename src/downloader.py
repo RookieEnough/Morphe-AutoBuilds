@@ -40,6 +40,20 @@ _ARCH_ALIASES = {
     "aarch64": "arm64-v8a",
 }
 
+# How the last download picked its app version. "latest" means the patches were
+# version-agnostic and the store's newest version was used, which the update
+# planner needs to know to rebuild when the app (not the patches) updates.
+_last_version_mode: str | None = None
+
+
+def set_version_mode(mode: str) -> None:
+    global _last_version_mode
+    _last_version_mode = mode
+
+
+def get_version_mode() -> str | None:
+    return _last_version_mode
+
 
 def normalize_arch(arch: str | None) -> str:
     """Return a canonical architecture name (defaults to ``universal``)."""
@@ -319,8 +333,10 @@ def download_platform(
         pinned = (config.get("version") or "").strip()
         if override_version:
             candidates = [override_version]
+            version_mode = "override"
         elif pinned:
             candidates = [pinned]
+            version_mode = "pinned"
         else:
             compat = utils.get_supported_versions(config["package"], cli, patches)
             if compat is None:
@@ -333,6 +349,7 @@ def download_platform(
                 )
             elif compat:
                 candidates = compat
+                version_mode = "compat"
             else:
                 try:
                     latest = platform_module.get_latest_version(app_name, config)
@@ -340,6 +357,8 @@ def download_platform(
                     logging.debug(f"Could not get latest version for {app_name} on {platform}: {e}")
                     latest = None
                 candidates = [latest] if latest else []
+                version_mode = "latest"
+        set_version_mode(version_mode)
 
         last_error: Exception | None = None
         for version in candidates:

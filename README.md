@@ -40,7 +40,7 @@ A sophisticated, automated pipeline that assembles installable Android applicati
 
 ### 📱 Supported Apps & Architectures
 
-The full list of supported apps lives in [`patch-config.json`](patch-config.json) (95 apps and growing). Each app can target `arm64-v8a`, `armeabi-v7a`, and/or `universal` builds, configured in [`arch-config.json`](arch-config.json).
+The full list of supported apps lives in [`patch-config.json`](patch-config.json) (100 apps and growing). Each app can target `arm64-v8a`, `armeabi-v7a`, and/or `universal` builds, configured in [`arch-config.json`](arch-config.json).
 
 *( Legend: ✅ = Available / ❌ = Not configured )*
 
@@ -137,6 +137,26 @@ Located in the `apps/` directory. Example for `apps/apkmirror/youtube.json`:
 }
 
 ```
+
+### Update detection
+
+`scripts/check_app_updates.py` rebuilds an app when any of these is true:
+
+* **The patch source published something new** — the source signature combines
+  the release tag/date/assets (and, for GitHub, the default-branch commit SHA),
+  so new releases, re-uploaded assets and plain commits all trigger a rebuild.
+* **The patches declare support for a newer app version** — when a patch source
+  publishes a machine-readable patches list, its highest non-experimental target
+  is compared with the version that was actually built.
+* **The patches are version-agnostic and the app itself was updated** — the
+  builder records `version_agnostic: true` in the build records when it used the
+  store's newest version (because the CLI declared no specific versions). Only
+  those entries are compared against the store's latest version, so apps whose
+  patches target specific versions never rebuild on every store bump.
+
+Apps with a pinned `version` in their app config are never rebuilt by store
+changes. The version-agnostic flag is written by the first build after this
+change and carried forward in `manifest.json` from then on.
 
 ### GitLab release updates
 

@@ -898,6 +898,12 @@ def plan_incremental(full_matrix: List[dict], old_manifest: Optional[dict],
             # apk filename is filled in *after* build by the workflow; for now
             # carry over whatever the old manifest had so we know what to keep.
             "apk": carried_apk,
+            # Persisted by merge_manifest.py after a successful build: how the
+            # builder chose the version (store "latest" for version-agnostic
+            # patches, or a patch-declared version). Carried forward so the
+            # planner keeps applying the right rebuild rule.
+            "version_agnostic": bool((old or {}).get("version_agnostic", False)),
+            "version_mode": (old or {}).get("version_mode", ""),
             # Preserved verbatim; refreshed by the merge step after each build.
             "built_version": old_built_ver,
         }
@@ -948,6 +954,19 @@ def plan_incremental(full_matrix: List[dict], old_manifest: Optional[dict],
                     logging.debug(
                         f"  {app}/{src}: no patches-list JSON available; "
                         f"relying on source-signature for rebuild detection"
+                    )
+
+            # Version-agnostic patches: the builder shipped the store's newest
+            # version, so a new app release (no patch change) must trigger a
+            # rebuild. Only entries that were actually built that way are
+            # compared, which prevents version-pinned apps from rebuilding on
+            # every store bump (the loop the old unconditional fallback caused).
+            if (not cur_app_ver and old_built_ver
+                    and (old or {}).get("version_agnostic")):
+                store_latest = fetch_latest_app_version(app)
+                if store_latest and _is_newer_version(store_latest, old_built_ver):
+                    reasons.append(
+                        f"app-updated: built {old_built_ver!r} -> store {store_latest!r}"
                     )
             old_apk = carried_apk
             if old_apk and old_apk not in existing_apk_set:
