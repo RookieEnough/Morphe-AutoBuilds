@@ -149,6 +149,20 @@ def test_unsupported_patch_bundle_is_not_retried_for_other_abis():
     assert attempts == ["universal"], "another ABI cannot fix missing patch support"
 
 
+def test_patch_declared_version_codes_are_recorded_per_abi():
+    output = (
+        "Most common compatible versions:\n"
+        "\t588.0.0.42.55 [versionCodes: ARM64_V8A=707615136, "
+        "ARMEABI_V7A=707615135] (123 patches)"
+    )
+    utils.remember_version_codes(output)
+    assert utils.preferred_version_code("universal") == 707615136
+    assert utils.preferred_version_code("arm64-v8a") == 707615136
+    assert utils.preferred_version_code("armeabi-v7a") == 707615135
+    utils.remember_version_codes("no version codes here")
+    assert utils.preferred_version_code("arm64-v8a") is None
+
+
 def main():
     tests = [
         value

@@ -4,7 +4,7 @@ import time
 import logging
 from bs4 import BeautifulSoup
 from urllib.parse import quote
-from src import session
+from src import session, utils
 
 base_url = "https://www.apkmirror.com"
 _blocked_by_cloudflare = False
@@ -793,6 +793,22 @@ def get_download_link(version: str, app_name: str, config: dict, arch: str = Non
         versions = [int(n) for n in re.findall(r"android\s*(\d+)", row_text.lower())]
         return -max(versions) if versions else 0
 
+    def _version_code_priority(row_text: str) -> int:
+        """Prefer the build whose versionCode the patch bundle declares.
+
+        APKMirror can list several uploads for one version string (different
+        rollouts, e.g. 707615019 and 707615136). Patching the wrong upload
+        fails on missing structures, so an exact match with the CLI's
+        ``versionCodes:`` wins; otherwise prefer the newest (highest) code.
+        """
+        # Cell text runs together (e.g. "...707615136Download"), so digits must
+        # only be bounded by other digits, not by \b.
+        codes = [int(n) for n in re.findall(r"(?<!\d)\d{6,10}(?!\d)", row_text)]
+        preferred = utils.preferred_version_code(target_arch)
+        if preferred and preferred in codes:
+            return -10**12
+        return -(max(codes) if codes else 0)
+
     def _best_row_link(
         require_version: bool = True,
         type_override: str | None = None,
@@ -816,15 +832,22 @@ def get_download_link(version: str, app_name: str, config: dict, arch: str = Non
                 link = _extract_row_link(row)
                 if link:
                     candidates.append(
-                        (_arch_priority(row_text), _android_priority(row_text), idx, link, row_text)
+                        (
+                            _arch_priority(row_text),
+                            _android_priority(row_text),
+                            _version_code_priority(row_text),
+                            idx,
+                            link,
+                            row_text,
+                        )
                     )
         if candidates:
-            candidates.sort(key=lambda item: (item[0], item[1], item[2]))
+            candidates.sort(key=lambda item: (item[0], item[1], item[2], item[3]))
             chosen = candidates[0]
             logging.info(
-                "APKMirror selected variant: %s", chosen[4].strip().replace("\n", " ")[:140]
+                "APKMirror selected variant: %s", chosen[5].strip().replace("\n", " ")[:140]
             )
-            return chosen[3]
+            return chosen[4]
         return None
 
     # Try exact version match first (preferring universal / arm64 over armeabi-only)

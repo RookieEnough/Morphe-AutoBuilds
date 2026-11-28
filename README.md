@@ -224,6 +224,9 @@ universal -> arm64-v8a -> armeabi-v7a
 * When a mirror publishes several builds for the same ABI, the newest Android
   baseline wins (Facebook, for example, ships separate Android 9+ and Android
   11+ arm64 bundles, and its patches only work on the newer one).
+* If the patch CLI declares `versionCodes:` for the app, the mirror upload with
+  that exact versionCode is preferred over other uploads of the same version
+  string (mirrors often publish several builds for one version).
 
 The order lives in [`src/downloader.py`](src/downloader.py) (`ARCH_PRIORITY`,
 `fallback_arches`) and is applied by the build loop in

@@ -8,6 +8,7 @@ lower-quality mirror. These tests pin the graded matching behaviour.
 Run with: python tests/test_apkmirror_variants.py
 """
 
+import re
 import sys
 from pathlib import Path
 from unittest import mock
@@ -72,7 +73,10 @@ def _fake_cf_get(pages):
             return FakeResponse(html=pages[url], url=url)
         if url.endswith("-download/"):
             lowered = url.lower()
-            if "a11" in lowered:
+            code = re.search(r"code(\d+)", url)
+            if code:
+                tag = "code" + code.group(1)
+            elif "a11" in lowered:
                 tag = "a11"
             elif "a9" in lowered:
                 tag = "a9"
@@ -151,6 +155,32 @@ def test_newest_android_baseline_wins_for_the_same_abi():
     )
     link = _resolve(CONFIG, html)
     assert link and "facebook-a11.apk" in link, f"expected the Android 11+ bundle, got {link}"
+
+
+def test_patch_declared_version_code_wins_over_row_order():
+    # APKMirror lists several uploads for one version string; the patches were
+    # built against 707615136, so that row must win over the first-listed one.
+    from src import utils
+
+    utils.remember_version_codes(
+        "Most common compatible versions:\n\t588.0.0.42.55 "
+        "[versionCodes: ARM64_V8A=707615136, ARMEABI_V7A=707615135] (123 patches)"
+    )
+    try:
+        html = _release_html(
+            _row(
+                "/apk/facebook-2/facebook/fb-588-code707615019-download/",
+                "Bundle", "arm64-v8a", "480dpi", "Android 11+", "707615019",
+            ),
+            _row(
+                "/apk/facebook-2/facebook/fb-588-code707615136-download/",
+                "Bundle", "arm64-v8a", "nodpi", "Android 11+", "707615136",
+            ),
+        )
+        link = _resolve(CONFIG, html)
+        assert link and "code707615136" in link, f"expected the patch build, got {link}"
+    finally:
+        utils.remember_version_codes("")
 
 
 def main():
