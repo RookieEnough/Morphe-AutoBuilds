@@ -714,21 +714,30 @@ def get_download_link(version: str, app_name: str, config: dict, arch: str = Non
         ]
     download_page_url = None
     
-    def _row_matches(row_text: str, type_override: str | None = None) -> bool:
+    def _row_matches(
+        row_text: str,
+        type_override: str | None = None,
+        *,
+        ignore_dpi: bool = False,
+        ignore_type: bool = False,
+    ) -> bool:
         r = row_text.lower()
         if 'variant' in r and 'arch' in r and 'version' in r:
             return False  # Skip header row
-            
+
         c_type = (type_override if type_override is not None else (config.get('type') or '')).lower()
-        if c_type and c_type not in r:
+        if not ignore_type and c_type and c_type not in r:
             return False
-        
+
         t_arch = (target_arch or 'universal').lower()
         if t_arch in ['universal', 'noarch']:
             if not any(a in r for a in ['universal', 'noarch', 'arm64-v8a', 'armeabi-v7a', 'arm64', 'arm']):
                 return False
         elif t_arch not in r and 'universal' not in r and 'noarch' not in r:
             return False
+
+        if ignore_dpi:
+            return True
 
         c_dpi = (config.get('dpi') or 'nodpi').lower()
         if c_dpi in ['nodpi', '120-640dpi', 'all', '']:
@@ -772,7 +781,25 @@ def get_download_link(version: str, app_name: str, config: dict, arch: str = Non
             return 1
         return 2
 
-    def _best_row_link(require_version: bool = True, type_override: str | None = None) -> str | None:
+    def _android_priority(row_text: str) -> int:
+        """Prefer the newest Android baseline a variant targets.
+
+        Facebook ships one arm64 bundle per minimum Android version (Android 9+,
+        Android 11+, ...). HushFacebook (and newer patches generally) only work
+        on the newer packaging, so the highest "Android N+" row must win over
+        the first row that merely matches the ABI. Unknown/missing values sort
+        last (0) so an explicit version always takes precedence.
+        """
+        versions = [int(n) for n in re.findall(r"android\s*(\d+)", row_text.lower())]
+        return -max(versions) if versions else 0
+
+    def _best_row_link(
+        require_version: bool = True,
+        type_override: str | None = None,
+        *,
+        ignore_dpi: bool = False,
+        ignore_type: bool = False,
+    ) -> str | None:
         candidates = []
         for idx, row in enumerate(rows):
             row_text = row.get_text()
@@ -780,13 +807,24 @@ def get_download_link(version: str, app_name: str, config: dict, arch: str = Non
                 continue
             if require_version and not _has_version_token(row_text, version):
                 continue
-            if _row_matches(row_text, type_override=type_override):
+            if _row_matches(
+                row_text,
+                type_override=type_override,
+                ignore_dpi=ignore_dpi,
+                ignore_type=ignore_type,
+            ):
                 link = _extract_row_link(row)
                 if link:
-                    candidates.append((_arch_priority(row_text), idx, link))
+                    candidates.append(
+                        (_arch_priority(row_text), _android_priority(row_text), idx, link, row_text)
+                    )
         if candidates:
-            candidates.sort(key=lambda item: (item[0], item[1]))
-            return candidates[0][2]
+            candidates.sort(key=lambda item: (item[0], item[1], item[2]))
+            chosen = candidates[0]
+            logging.info(
+                "APKMirror selected variant: %s", chosen[4].strip().replace("\n", " ")[:140]
+            )
+            return chosen[3]
         return None
 
     # Try exact version match first (preferring universal / arm64 over armeabi-only)
@@ -803,13 +841,33 @@ def get_download_link(version: str, app_name: str, config: dict, arch: str = Non
     # if the release title carries it; never loosen version matching on multi-version fallbacks.
     if not download_page_url and correct_version_page:
         download_page_url = _best_row_link(require_version=False)
-    
+
+    # DPI is a soft preference for bundles: a row that omits the configured
+    # range (or says "nodpi") still installs. Keep the arch requirement strict,
+    # and only relax after the strict pass found nothing on an exact release page.
+    if not download_page_url and correct_version_page:
+        download_page_url = _best_row_link(require_version=False, ignore_dpi=True)
+        if download_page_url:
+            logging.warning(
+                "APKMirror: no variant matched dpi %r for %s %s; selected on type+arch only",
+                (config.get('dpi') or 'nodpi'), app_name, version,
+            )
+
+    # Some releases label split bundles as a different type than the config
+    # expects (e.g. APK vs BUNDLE). Relax that too, but only as the last resort.
+    if not download_page_url and correct_version_page:
+        download_page_url = _best_row_link(require_version=False, ignore_dpi=True, ignore_type=True)
+        if download_page_url:
+            logging.warning(
+                "APKMirror: no variant matched type %r for %s %s; selected the best arch row",
+                (config.get('type') or ''), app_name, version,
+            )
+
     if not download_page_url:
         logging.error(f"No variant found for {app_name} {version} with criteria {criteria}")
-        # Debug: log what rows we found
-        logging.debug(f"Found {len(rows)} rows total")
-        for idx, row in enumerate(rows[:5]):  # First 5 rows
-            logging.debug(f"Row {idx}: {row.get_text()[:100]}...")
+        logging.info(f"APKMirror: inspected {len(rows)} variant row(s)")
+        for idx, row in enumerate(rows[:8]):
+            logging.info(f"  row {idx}: {row.get_text(' ', strip=True)[:160]}")
         return None
     
     # --- STANDARD DOWNLOAD FLOW ---

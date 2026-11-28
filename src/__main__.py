@@ -503,7 +503,6 @@ def _build_arches_with_fallback(app_name: str, source: str, arches: list[str]) -
     downloader.clear_rejected_abis()
     built_apks: list[str] = []
     attempted: set[str] = set()
-    last_error: Exception | None = None
 
     for requested in arches:
         chain = [downloader.normalize_arch(requested), *downloader.fallback_arches(requested)]
@@ -512,19 +511,11 @@ def _build_arches_with_fallback(app_name: str, source: str, arches: list[str]) -
                 continue
             attempted.add(arch)
             logging.info(f"🔨 Building {app_name} for {arch} architecture...")
-            try:
-                apk_path = run_build(app_name, source, arch)
-            except downloader.UnknownPatchCompatibilityError:
-                # The patch bundle has nothing for this package; a different
-                # ABI cannot change that, so fail immediately with the clear
-                # "no supported versions" error instead of retrying.
-                raise
-            except Exception as exc:
-                # A failed patch/merge for one ABI should not stop the chain:
-                # the next ABI may download a build the patches do apply to.
-                last_error = exc
-                logging.warning(f"{arch} build for {app_name} failed: {exc}")
-                apk_path = None
+            # A raised error means the APK was produced but patching/merging
+            # failed; retrying another ABI would re-download the same app build
+            # and fail the same way. Only a None return (no usable download for
+            # this ABI) is worth retrying with the next ABI.
+            apk_path = run_build(app_name, source, arch)
             if apk_path:
                 built_apks.append(apk_path)
                 print(f"✅ Built {arch} version: {Path(apk_path).name}")
@@ -532,11 +523,9 @@ def _build_arches_with_fallback(app_name: str, source: str, arches: list[str]) -
             further = [a for a in downloader.fallback_arches(arch) if a not in attempted]
             if further:
                 logging.warning(
-                    f"{arch} build for {app_name} failed; falling back to "
+                    f"{arch} build for {app_name} produced no APK; falling back to "
                     f"{', '.join(further)} (preference: {' -> '.join(downloader.ARCH_PRIORITY)})"
                 )
-    if not built_apks and last_error is not None:
-        raise last_error
     return built_apks
 
 

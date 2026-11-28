@@ -111,20 +111,24 @@ def test_cli_versions_are_parsed_normally():
     assert versions == ["1.2.3", "1.2.2"]
 
 
-def test_patch_failure_for_one_abi_falls_back_to_the_next():
+def test_patch_failure_stops_the_abi_chain():
     attempts = []
 
     def fake_run_build(app_name, source, arch):
         attempts.append(arch)
-        if arch == "universal":
-            raise RuntimeError("patch exploded")
-        return Path(f"{app_name}-{arch}.apk")
+        raise RuntimeError("patch exploded")
 
     with mock.patch.object(pipeline, "run_build", fake_run_build):
-        built = pipeline._build_arches_with_fallback("app", "source", ["universal"])
+        try:
+            pipeline._build_arches_with_fallback("app", "source", ["universal"])
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("a patch failure must surface immediately")
 
-    assert attempts == ["universal", "arm64-v8a"]
-    assert [Path(p).name for p in built] == ["app-arm64-v8a.apk"]
+    assert attempts == ["universal"], (
+        "retrying lower ABIs after a patch failure re-downloads the same build and fails again"
+    )
 
 
 def test_unsupported_patch_bundle_is_not_retried_for_other_abis():
@@ -143,16 +147,6 @@ def test_unsupported_patch_bundle_is_not_retried_for_other_abis():
             raise AssertionError("an unsupported patch bundle must fail immediately")
 
     assert attempts == ["universal"], "another ABI cannot fix missing patch support"
-
-
-def test_failure_is_reraised_when_every_abi_fails():
-    with mock.patch.object(pipeline, "run_build", side_effect=RuntimeError("boom")):
-        try:
-            pipeline._build_arches_with_fallback("app", "source", ["universal"])
-        except RuntimeError as exc:
-            assert "boom" in str(exc)
-        else:
-            raise AssertionError("expected the underlying build error to surface")
 
 
 def main():

@@ -112,14 +112,27 @@ def download_resource(url: str, name: str = None) -> Path:
                 continue
             raise last_error
 
+# Tools (CLI patches) are immutable within one build process. The ABI fallback
+# may call run_build several times, so cache them instead of re-downloading the
+# whole patch bundle for every architecture attempt.
+_required_cache: dict[str, tuple[list[Path], str]] = {}
+
+
 def download_required(source: str) -> tuple[list[Path], str]:
+    cached = _required_cache.get(source)
+    if cached and all(path.exists() for path in cached[0]):
+        logging.info(f"Reusing already downloaded tools for source {source}")
+        return list(cached[0]), cached[1]
+
     source_path = Path("sources") / f"{source}.json"
     with source_path.open() as json_file:
         repos_info = json.load(json_file)
 
     # Handle bundle format
     if isinstance(repos_info, dict) and "bundle_url" in repos_info:
-        return download_from_bundle(repos_info)
+        result = download_from_bundle(repos_info)
+        _required_cache[source] = (list(result[0]), result[1])
+        return result
     
     # Handle old list format
     name = repos_info[0]["name"]
@@ -149,6 +162,7 @@ def download_required(source: str) -> tuple[list[Path], str]:
             else:
                 downloaded_files.append(download_resource(asset_url))
 
+    _required_cache[source] = (list(downloaded_files), name)
     return downloaded_files, name
 
 def download_from_bundle(bundle_info: dict) -> tuple[list[Path], str]:

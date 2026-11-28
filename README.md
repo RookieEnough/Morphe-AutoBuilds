@@ -221,6 +221,9 @@ universal -> arm64-v8a -> armeabi-v7a
 * Explicit entries in [`arch-config.json`](arch-config.json) are still honoured:
   an app listed for `arm64-v8a` and `armeabi-v7a` produces both, and each target
   falls back down the same order if it cannot be built.
+* When a mirror publishes several builds for the same ABI, the newest Android
+  baseline wins (Facebook, for example, ships separate Android 9+ and Android
+  11+ arm64 bundles, and its patches only work on the newer one).
 
 The order lives in [`src/downloader.py`](src/downloader.py) (`ARCH_PRIORITY`,
 `fallback_arches`) and is applied by the build loop in
