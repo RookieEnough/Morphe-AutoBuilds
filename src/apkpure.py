@@ -12,6 +12,7 @@ API: GET https://tapi.pureapk.com/v3/get_app_his_version
 import json
 import logging
 import re
+import time
 
 from bs4 import BeautifulSoup
 
@@ -88,24 +89,32 @@ def _abi_queries_for_config(config) -> list[list[str]]:
 
 def _api_versions(package: str, abis: list[str] | None = None):
     """Return the API's version list for a package, or None on failure."""
-    try:
-        res = session.get(
-            API_URL,
-            headers=_api_headers(abis),
-            params={"package_name": package, "hl": "en"},
-            timeout=20,
-        )
-        if res.status_code != 200:
+    for attempt in range(2):
+        try:
+            res = session.get(
+                API_URL,
+                headers=_api_headers(abis),
+                params={"package_name": package, "hl": "en"},
+                timeout=20,
+            )
+            if res.status_code == 200:
+                data = res.json()
+                versions = data.get("version_list") or []
+                if versions:
+                    logging.info(f"APKPure API: {len(versions)} versions for {package}")
+                return versions or None
             logging.debug(f"APKPure API returned {res.status_code} for {package}")
+            if attempt == 0 and res.status_code in (429, 500, 502, 503, 504):
+                time.sleep(2)
+                continue
             return None
-        data = res.json()
-        versions = data.get("version_list") or []
-        if versions:
-            logging.info(f"APKPure API: {len(versions)} versions for {package}")
-        return versions or None
-    except Exception as e:
-        logging.debug(f"APKPure API failed for {package}: {e}")
-        return None
+        except Exception as e:
+            logging.debug(f"APKPure API failed for {package}: {e}")
+            if attempt == 0:
+                time.sleep(2)
+                continue
+            return None
+    return None
 
 
 _ARCH_TAG_RE = re.compile(r"(arm64|armeabi|armv7|arm7|x86_64|x86)", re.IGNORECASE)

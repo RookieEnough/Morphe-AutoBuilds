@@ -14,7 +14,7 @@ URL structure:
 import logging
 import re
 from typing import Dict, Optional
-from urllib.parse import quote
+from urllib.parse import quote, urljoin
 
 from bs4 import BeautifulSoup
 
@@ -125,6 +125,7 @@ def get_download_link(version: str, app_name: str, config: Dict) -> Optional[str
         logging.warning(f"APKFab: could not load pages for {app_name}")
         return None
 
+    target_page_url = None
     target_sha1 = None
     for entry in soup.select(".version_history > div.list"):
         ver_el = entry.select_one(".package_info .title .version")
@@ -136,23 +137,44 @@ def get_download_link(version: str, app_name: str, config: Dict) -> Optional[str
                 m = re.search(r"sha1=([a-f0-9]{40})", link["href"])
                 if m:
                     target_sha1 = m.group(1)
+                    target_page_url = urljoin(base + "/", link["href"])
                     break
-    if not target_sha1:
+    if not target_sha1 or not target_page_url:
         logging.warning(f"Version {version} not found on APKFab for {app_name}")
         return None
 
     # The /download?sha1= page issues a signed, expiring d.apkfab.com URL.
-    # Fetch it fresh every time; do not trust its displayed version text for
-    # old versions (it can show the latest version's metadata).
-    res = _fetch(f"{base}/download?sha1={target_sha1}")
+    # For some legacy versions APKFab ignores ?sha1= and renders the latest
+    # version's download button without sha1= in its query string; verify
+    # either the sha1 matches or the advertised version matches requested.
+    res = _fetch(target_page_url)
     if not res:
         return None
     soup = BeautifulSoup(res.content, "html.parser")
+    page_title = soup.title.get_text(" ", strip=True) if soup.title else ""
+
+    def _is_valid_download_href(href: str) -> bool:
+        if "d.apkfab.com/get-download" not in href:
+            return False
+        if f"sha1={target_sha1}" in href:
+            return True
+        if "sha1=" in href:
+            return False
+        # Without sha1= in URL, APKFab is serving a generic/latest link:
+        # only accept if the page title does not name a conflicting version.
+        title_vers = re.findall(r"\b(\d+(?:\.\d+)+)\b", page_title)
+        if title_vers and not any(_versions_match(v, version) for v in title_vers):
+            logging.warning(
+                f"APKFab download page for {app_name} v{version} redirected to {title_vers[0]}; skipping mismatched version"
+            )
+            return False
+        return True
+
     final = soup.select_one("main.dt-download-page .download_button_box a.down_btn.download_blue_button")
-    if final and final.get("href") and "d.apkfab.com" in final["href"]:
+    if final and final.get("href") and _is_valid_download_href(final["href"]):
         return final["href"]
     for a in soup.find_all("a", href=True):
-        if "d.apkfab.com/get-download" in a["href"]:
+        if _is_valid_download_href(a["href"]):
             return a["href"]
-    logging.warning(f"APKFab: no final download URL for {app_name} v{version}")
+    logging.warning(f"APKFab: no matching download URL for {app_name} v{version}")
     return None

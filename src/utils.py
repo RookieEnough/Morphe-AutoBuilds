@@ -299,7 +299,7 @@ def get_supported_versions(package_name: str, cli: str, patches: str) -> Optiona
                 "list-patches",
                 "--with-packages",
                 "--with-versions",
-                patches,
+                "--patches", patches,
             ]
             alt_out = run_process(alt_cmd, capture=True, silent=True, check=False) or ""
             derived: list[str] = []
@@ -580,22 +580,30 @@ def detect_source_type(cli_file: Path, patches_file: Path) -> str:
     return "unknown"
 
 
-def strip_zip_entries(zip_path: Path, patterns: list[str]) -> None:
-    """Strip matching file patterns from a ZIP archive in a cross-platform way."""
+def strip_zip_entries(zip_path: Path, patterns: list[str]) -> bool:
+    """Strip matching file patterns from a ZIP archive; return True if modified."""
     if not zip_path or not zip_path.exists():
-        return
+        return False
+
+    import fnmatch
+    try:
+        with zipfile.ZipFile(zip_path, 'r') as zin:
+            if not any(any(fnmatch.fnmatch(item.filename, p) for p in patterns) for item in zin.infolist()):
+                return False
+    except Exception as e:
+        logging.debug(f"Failed inspecting zip before strip: {e}")
+        return False
 
     if shutil.which("zip"):
         try:
             run_process(["zip", "--delete", str(zip_path)] + patterns, silent=True, check=False)
-            return
+            return True
         except Exception:
             pass
 
     # Pure Python fallback using zipfile
     temp_zip = zip_path.with_suffix(".tmp.zip")
     try:
-        import fnmatch
         modified = False
         with zipfile.ZipFile(zip_path, 'r') as zin:
             with zipfile.ZipFile(temp_zip, 'w', compression=zin.compression) as zout:
@@ -607,12 +615,13 @@ def strip_zip_entries(zip_path: Path, patterns: list[str]) -> None:
         if modified:
             zip_path.unlink()
             temp_zip.rename(zip_path)
-        else:
-            temp_zip.unlink(missing_ok=True)
+            return True
+        temp_zip.unlink(missing_ok=True)
     except Exception as e:
         logging.debug(f"Failed to strip zip entries: {e}")
         if temp_zip.exists():
             temp_zip.unlink(missing_ok=True)
+    return False
 
 
 def check_apk_integrity(apk_path: Path) -> bool:

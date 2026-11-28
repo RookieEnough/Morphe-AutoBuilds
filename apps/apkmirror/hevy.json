@@ -4,6 +4,6 @@
   "type": "BUNDLE",
   "arch": "universal",
   "dpi": "120-640dpi",
-  "package": "com.hevy.app",
+  "package": "com.hevy",
   "version": ""
 }

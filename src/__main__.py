@@ -322,21 +322,9 @@ def run_build(app_name: str, source: str, arch: str = "universal") -> str:
 
             logging.info(f"Normalized APK file: {input_apk}")
 
-        # --- ARCHITECTURE-SPECIFIC PROCESSING ---
-        if arch != "universal":
-            logging.info(f"Processing APK for {arch} architecture...")
-            if arch == "arm64-v8a":
-                utils.strip_zip_entries(input_apk, ["lib/x86/*", "lib/x86_64/*", "lib/armeabi-v7a/*"])
-            elif arch == "armeabi-v7a":
-                utils.strip_zip_entries(input_apk, ["lib/x86/*", "lib/x86_64/*", "lib/arm64-v8a/*"])
-        else:
-            utils.strip_zip_entries(input_apk, ["lib/x86/*", "lib/x86_64/*"])
-
-        # Final ABI guard: never ship a build whose native libraries do not
-        # cover the architecture in its label. (2026-10-30: "universal" X and
-        # Reddit builds merged from a single armeabi-v7a variant would not
-        # install on 64-bit-only devices.) Failing the attempt is correct;
-        # the store keeps serving the previous good build.
+        # Inspect native ABIs before patching without mutating input_apk (rewriting
+        # a signed standalone APK here would strip its signing block and break
+        # patches such as SpoofSignature that read stockSigningCertificate()).
         merged_abis = utils.download_abis(input_apk)
         if merged_abis:
             if arch == "universal" and "arm64-v8a" not in merged_abis:
@@ -433,13 +421,37 @@ def run_build(app_name: str, source: str, arch: str = "universal") -> str:
         if not apksigner:
             raise RuntimeError("apksigner not found")
 
+        # --- ARCHITECTURE-SPECIFIC LIB STRIPPING (POST-PATCH, PRE-SIGN) ---
+        # Strip excluded ABIs on output_apk after patching succeeds so input_apk
+        # retains its stock developer signature for patches that inspect it.
+        strip_patterns = {
+            "arm64-v8a": ["lib/x86/*", "lib/x86_64/*", "lib/armeabi-v7a/*"],
+            "armeabi-v7a": ["lib/x86/*", "lib/x86_64/*", "lib/arm64-v8a/*"],
+        }.get(arch, ["lib/x86/*", "lib/x86_64/*"])
+        stripped = utils.strip_zip_entries(output_apk, strip_patterns)
+
+        need_align = stripped
         if app_name in ("tiktok", "twitter", "x-new"):
             from src.play_updates import disable_play_store_updates
             disable_play_store_updates(output_apk)
-            zipalign = shutil.which("zipalign") or str(Path(apksigner).with_name("zipalign"))
-            aligned_apk = output_apk.with_suffix(".aligned.apk")
-            utils.run_process([zipalign, "-f", "-P", "16", "4", str(output_apk), str(aligned_apk)])
-            aligned_apk.replace(output_apk)
+            need_align = True
+
+        if need_align:
+            zipalign = shutil.which("zipalign")
+            if not zipalign:
+                for cand in (
+                    Path(apksigner).with_name("zipalign"),
+                    Path(apksigner).with_name("zipalign.exe"),
+                ):
+                    if cand.exists():
+                        zipalign = str(cand)
+                        break
+            if zipalign:
+                aligned_apk = output_apk.with_suffix(".aligned.apk")
+                utils.run_process([zipalign, "-f", "-P", "16", "4", str(output_apk), str(aligned_apk)])
+                aligned_apk.replace(output_apk)
+            elif app_name in ("tiktok", "twitter", "x-new"):
+                raise RuntimeError("zipalign not found")
 
         try:
             utils.run_process([
