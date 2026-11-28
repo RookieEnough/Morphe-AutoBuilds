@@ -787,6 +787,22 @@ def _is_unreliable_source_sig(sig: str) -> bool:
     )
 
 
+def _apk_belongs_to_app(apk_name: str, app: str) -> bool:
+    """True when a manifest APK name is really this app's build output.
+
+    Manifests written before the build-record fix can point at files that came
+    with a patch source (e.g. ``hush-unpacker-0.25.0.apk`` recorded as Facebook's
+    build) or at raw mirror downloads. Carrying those over would publish them as
+    the app's update, so treat them as "no APK recorded" and rebuild instead.
+    """
+    if not apk_name or not app:
+        return False
+    return (
+        apk_name.lower().startswith(f"{app.lower()}-")
+        and extract_version_from_filename(apk_name) != ""
+    )
+
+
 def _recover_apk_from_release(app: str, arch: str, existing_apks: List[str]) -> str:
     a = (app or "").lower()
     rarch = (arch or "").lower()
@@ -850,6 +866,12 @@ def plan_incremental(full_matrix: List[dict], old_manifest: Optional[dict],
         if old and old_src_sig and _is_unreliable_source_sig(cur_src_sig):
             cur_src_sig = old_src_sig
         carried_apk = (old or {}).get("apk", "")
+        if carried_apk and not _apk_belongs_to_app(carried_apk, app):
+            logging.warning(
+                f"  {app}/{src}: ignoring manifest APK {carried_apk!r}; it is not "
+                f"a build output of {app}"
+            )
+            carried_apk = ""
         # built_version is the version actually shipped in the carried APK
         # (populated post-build by record_build.py -> merge_manifest.py). Carry
         # it forward so we can compare it against the store's newest version.

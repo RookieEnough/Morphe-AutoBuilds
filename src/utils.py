@@ -197,6 +197,17 @@ def get_highest_version(versions: list[str]) -> str | None:
             highest_version = v
     return highest_version
 
+def _reports_no_compatible_versions(output: str) -> bool:
+    """True when the patch CLI explicitly reports that it has nothing for the app.
+
+    Morphe/ReVanced print e.g. ``No compatible versions found in: patches.mpp``
+    when no patch in the bundle targets the queried package. That is a definite
+    "unsupported", not "patches are version-agnostic": building the store's
+    latest in that case can only produce an APK that no patch applies to.
+    """
+    return re.search(r"no compatible versions", output or "", re.IGNORECASE) is not None
+
+
 def get_supported_versions(package_name: str, cli: str, patches: str) -> Optional[list[str]]:
     """Return the app versions the patch bundle declares compatibility with.
 
@@ -270,6 +281,12 @@ def get_supported_versions(package_name: str, cli: str, patches: str) -> Optiona
         return None
 
     if len(lines) <= 2:
+        if _reports_no_compatible_versions(output):
+            logging.warning(
+                f"Patch bundle reports no compatible versions for {package_name}; "
+                "treating the app as unsupported instead of building a stock APK"
+            )
+            return None
         logging.warning("Output has no version lines")
         return []
 
@@ -315,6 +332,12 @@ def get_supported_versions(package_name: str, cli: str, patches: str) -> Optiona
             pass
 
     if not versions:
+        if _reports_no_compatible_versions(output):
+            logging.warning(
+                f"Patch bundle reports no compatible versions for {package_name}; "
+                "treating the app as unsupported instead of building a stock APK"
+            )
+            return None
         logging.warning("No supported versions found")
         return []
 

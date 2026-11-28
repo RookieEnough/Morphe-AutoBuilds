@@ -111,7 +111,7 @@ jobs:
         id: find-apk
         run: |
           # Find the built APK file(s)
-          apk_files=$(ls -1 *.apk 2>/dev/null)
+          apk_files=$(ls -1 "${{ inputs.app_name }}"-*.apk 2>/dev/null)
           if [ -z "$apk_files" ]; then
             echo "❌ No APK files found"
             exit 1
@@ -134,7 +134,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: manual-apk-${{ inputs.app_name }}-${{ inputs.architecture }}
-          path: "*.apk"
+          path: "${{ inputs.app_name }}-*.apk"
+          if-no-files-found: ignore
       
       - name: Install Publisher Dependencies
         if: ${{ inputs.replace_in_release == true }}
@@ -151,7 +152,7 @@ jobs:
             exit 1
           fi
           mkdir -p ./release-apks
-          cp -f *.apk ./release-apks/ 2>/dev/null || true
+          cp -f "${{ inputs.app_name }}"-*.apk ./release-apks/ 2>/dev/null || true
           python scripts/gitlab_publish_release.py \
             --apks-dir ./release-apks \
             --merge
@@ -178,7 +179,7 @@ jobs:
       - name: Publish Summary
         if: ${{ inputs.replace_in_release == true }}
         run: |
-          count=$(ls -1 *.apk 2>/dev/null | wc -l)
+          count=$(ls -1 "${{ inputs.app_name }}"-*.apk 2>/dev/null | wc -l)
           echo "Published $count APK(s) to the release."
 
       - name: Cleanup Version Override

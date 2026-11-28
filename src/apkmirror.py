@@ -59,6 +59,39 @@ def _cf_get(url, **kwargs):
             return rendered
         return None
 
+    def _via_flaresolverr():
+        """Render the page through FlareSolverr (started by the CI workflows).
+
+        The workflows already run FlareSolverr for the other providers, so use
+        it as the second browser fallback when APKMirror serves a challenge.
+        Its cookies are synced so the following page requests can go direct.
+        """
+        from src import flaresolverr
+
+        result = flaresolverr.solve(url, timeout=60)
+        if not result or not result.get("html"):
+            return None
+        html = result["html"]
+        # FlareSolverr can report success while still returning the challenge
+        # page (for example when the IP stays blocked). Never treat that as
+        # content: the caller would cache "Just a moment..." as a release page.
+        lowered = html.lower()
+        if any(
+            marker in lowered
+            for marker in ("just a moment", "attention required", "verify you are human")
+        ):
+            logging.debug("FlareSolverr returned a challenge page for %s", url)
+            return None
+        cookies = result.get("cookies") or {}
+        for name, value in cookies.items():
+            session.cookies.set(name, value, domain=".apkmirror.com")
+        logging.info("APKMirror page obtained through FlareSolverr")
+        return flaresolverr.FlareSolverrResponse(
+            url=result.get("url") or url,
+            html=result["html"],
+            cookies=cookies,
+        )
+
     def _is_challenge(response) -> bool:
         if response.status_code != 403:
             return False
@@ -91,20 +124,25 @@ def _cf_get(url, **kwargs):
         logging.warning("APKMirror persisted in rate-limiting (429); skipping APKMirror for this build")
         raise ApkMirrorBlocked("APKMirror rate-limited (429)")
     if _is_challenge(response):
-        # CI jobs provide Trawl, the same browser-rendering service used by
-        # rvb.  It supplies ordinary page HTML/cookies; if it is absent or
-        # cannot obtain a page, preserve the existing provider fallback.
-        try:
-            rendered = _via_trawl()
+        # CI jobs provide browser services: trawl (optional, TRAWL_URL) and
+        # FlareSolverr (the service the workflows already start for the other
+        # providers). Try them instead of giving up on APKMirror: the correct
+        # build for apps such as Facebook is only served here, while the
+        # fallback mirrors may only have an older/legacy build of that version.
+        for label, browser in (("trawl", _via_trawl), ("FlareSolverr", _via_flaresolverr)):
+            try:
+                rendered = browser()
+            except Exception as exc:
+                logging.debug("APKMirror %s fallback failed: %s", label, exc)
+                rendered = None
             if rendered:
-                _use_trawl = True
+                if label == "trawl":
+                    _use_trawl = True
                 return rendered
-        except Exception as exc:
-            logging.debug("APKMirror browser-service fallback failed: %s", exc)
         _blocked_by_cloudflare = True
         logging.warning(
-            "APKMirror served a Cloudflare challenge; skipping APKMirror "
-            "for this build instead of launching a browser."
+            "APKMirror served a Cloudflare challenge and no browser service "
+            "could fetch the page; skipping APKMirror for this build."
         )
         raise ApkMirrorBlocked("APKMirror Cloudflare challenge")
     return response

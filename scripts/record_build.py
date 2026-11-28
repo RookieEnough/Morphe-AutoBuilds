@@ -77,6 +77,24 @@ def extract_version_from_filename(apk_name: str) -> str:
     return matches[-1].group(1).strip()
 
 
+def is_app_build_output(apk_name: str, app: str) -> bool:
+    """True when ``apk_name`` is a build output of ``app``.
+
+    The build writes ``{app}-{arch}-{name}-v{version}.apk`` (for example
+    ``instagram-arm64-v8a-piko-v430.0.0.53.80.apk``). Downloads that arrive with
+    a patch source, such as ``hush-unpacker-0.25.0.apk`` or a mirror's
+    ``google-news-5-172-0-1024046478.apk``, share the working directory but are
+    not build outputs; recording them would publish a tool APK as the app's
+    build and overwrite its manifest entry.
+    """
+    if not apk_name or not app:
+        return False
+    return (
+        apk_name.lower().startswith(f"{app.lower()}-")
+        and extract_version_from_filename(apk_name) != ""
+    )
+
+
 def main() -> int:
     app = os.environ.get("APP_NAME", "").strip()
     src = os.environ.get("SOURCE", "").strip()
@@ -88,6 +106,10 @@ def main() -> int:
         return 0
 
     apk_name = Path(apk_path).name if apk_path else ""
+
+    if apk_name and not is_app_build_output(apk_name, app):
+        print(f"Skipping {apk_name!r}: not an output of the {app} build")
+        return 0
 
     # Prefer explicit ARCH env, otherwise detect from filename, fallback universal
     arch = arch_env or detect_arch_from_filename(apk_name) or "universal"

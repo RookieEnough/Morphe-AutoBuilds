@@ -205,6 +205,33 @@ Located in `patches/`. Example for `patches/youtube-morphe.txt`. Use `+` to forc
 
 ```
 
+### ABI selection policy
+
+Every app is built along one preference order:
+
+```text
+universal -> arm64-v8a -> armeabi-v7a
+```
+
+* A **universal** APK installs on every device, so it is attempted first.
+* If no source can produce it (for example when the only download for a version
+  is a 32-bit split), the build is retried as **arm64-v8a**, and only if that
+  also fails as **armeabi-v7a**. The pipeline never silently ships a lower-ABI
+  build under the `universal` name.
+* Explicit entries in [`arch-config.json`](arch-config.json) are still honoured:
+  an app listed for `arm64-v8a` and `armeabi-v7a` produces both, and each target
+  falls back down the same order if it cannot be built.
+
+The order lives in [`src/downloader.py`](src/downloader.py) (`ARCH_PRIORITY`,
+`fallback_arches`) and is applied by the build loop in
+[`src/__main__.py`](src/__main__.py). Offline regression:
+`python tests/test_arch_fallback.py`.
+
+If a patch bundle reports **no compatible versions** for an app, the build now
+stops immediately with an explicit error instead of downloading the store's
+latest APK and refusing to sign an unpatched result — that usually means the
+app's patch source dropped support (or was never updated) for that package.
+
 ---
 
 ## 🚀 Local Build Instructions

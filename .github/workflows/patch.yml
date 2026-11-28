@@ -214,8 +214,10 @@ jobs:
           SOURCE: ${{ matrix.source }}
         run: |
           mkdir -p build_records
-          # Record every produced APK so manifest can map (app, source, arch) -> filename
-          for apk in *.apk; do
+          # Record every produced APK so manifest can map (app, source, arch) -> filename.
+          # Scope the glob to this app: patch sources also unpack tool APKs
+          # (e.g. hush-unpacker-*.apk) into the same directory.
+          for apk in "${APP_NAME}"-*.apk; do
             [ -e "$apk" ] || continue
             # record_build.py now detects arch from filename automatically
             APK_PATH="$apk" python scripts/record_build.py || true
@@ -227,7 +229,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: apk-${{ matrix.app_name }}-${{ matrix.source }}
-          path: "*.apk"
+          path: "${{ matrix.app_name }}-*.apk"
+          if-no-files-found: ignore
 
       - name: Upload Build Records
         if: always()

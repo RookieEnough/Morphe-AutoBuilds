@@ -26,6 +26,41 @@ class UnknownPatchCompatibilityError(ValueError):
 
 _rejected_abis: set[str] = set()
 
+# Build-target preference order. A universal APK installs on every device, so
+# it is always attempted first; arm64-v8a covers all current 64-bit devices and
+# is the next best; armeabi-v7a is the last resort (32-bit only devices, and the
+# single-ABI downloads some mirrors serve for a "universal" request).
+ARCH_PRIORITY = ("universal", "arm64-v8a", "armeabi-v7a")
+
+_ARCH_ALIASES = {
+    "arm-v7a": "armeabi-v7a",
+    "armv7": "armeabi-v7a",
+    "armv7a": "armeabi-v7a",
+    "arm64": "arm64-v8a",
+    "aarch64": "arm64-v8a",
+}
+
+
+def normalize_arch(arch: str | None) -> str:
+    """Return a canonical architecture name (defaults to ``universal``)."""
+    value = (arch or "universal").strip().lower()
+    if not value:
+        return "universal"
+    return _ARCH_ALIASES.get(value, value)
+
+
+def fallback_arches(arch: str | None) -> list[str]:
+    """Return the build targets to try, in order, after ``arch`` fails.
+
+    ``universal`` degrades to ``arm64-v8a`` and then ``armeabi-v7a``;
+    ``arm64-v8a`` degrades to ``armeabi-v7a``. Unknown targets have no
+    fallback, so an explicitly requested architecture stays explicit.
+    """
+    value = normalize_arch(arch)
+    if value not in ARCH_PRIORITY:
+        return []
+    return list(ARCH_PRIORITY[ARCH_PRIORITY.index(value) + 1:])
+
 
 def clear_rejected_abis() -> None:
     _rejected_abis.clear()
@@ -277,8 +312,10 @@ def download_platform(
             if compat is None:
                 raise UnknownPatchCompatibilityError(
                     f"Cannot determine patch-compatible versions for {app_name} "
-                    f"(package {config['package']}); refusing to fall back to "
-                    f"latest to avoid shipping a build with silently skipped patches."
+                    f"(package {config['package']}): the patch bundle reports no "
+                    f"supported versions for it, or the CLI could not be queried. "
+                    f"Refusing to fall back to latest to avoid shipping a build "
+                    f"with silently skipped patches."
                 )
             elif compat:
                 candidates = compat

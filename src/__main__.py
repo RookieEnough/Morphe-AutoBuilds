@@ -489,31 +489,54 @@ def run_build(app_name: str, source: str, arch: str = "universal") -> str:
     return None
 
 def _build_arches_with_fallback(app_name: str, source: str, arches: list[str]) -> list[str]:
-    """Build requested architectures, falling back to available ABI variants
-    if an automatic universal build fails solely due to single-ABI downloads."""
+    """Build the requested architectures, degrading to the next best ABI on failure.
+
+    Every app follows the same preference order: universal -> arm64-v8a ->
+    armeabi-v7a. If a requested target cannot be produced (typically because the
+    only downloadable APK for that version is a lower-ABI split), the next best
+    ABI is attempted instead of shipping the lower-ABI build as "universal" or
+    failing outright. Once a target in a fallback chain succeeds, the chain
+    stops: a universal build that degrades to arm64-v8a does not also produce
+    an armeabi-v7a APK. Explicitly requested architectures are still all built
+    (for example an app configured for both arm64-v8a and armeabi-v7a).
+    """
     downloader.clear_rejected_abis()
     built_apks: list[str] = []
-    for arch in arches:
-        logging.info(f"🔨 Building {app_name} for {arch} architecture...")
-        apk_path = run_build(app_name, source, arch)
-        if apk_path:
-            built_apks.append(apk_path)
-            print(f"✅ Built {arch} version: {Path(apk_path).name}")
+    attempted: set[str] = set()
+    last_error: Exception | None = None
 
-    if not built_apks and arches == ["universal"]:
-        rejected = downloader.get_rejected_abis()
-        fallback_arches = [a for a in ("arm64-v8a", "armeabi-v7a") if a in rejected]
-        if fallback_arches:
-            logging.warning(
-                f"Universal build for {app_name} could not cover 64-bit+universal ABIs; "
-                f"falling back to available variant architecture(s): {fallback_arches}"
-            )
-            for alt_arch in fallback_arches:
-                logging.info(f"🔨 Building {app_name} for {alt_arch} architecture (variant fallback)...")
-                apk_path = run_build(app_name, source, alt_arch)
-                if apk_path:
-                    built_apks.append(apk_path)
-                    print(f"✅ Built {alt_arch} version: {Path(apk_path).name}")
+    for requested in arches:
+        chain = [downloader.normalize_arch(requested), *downloader.fallback_arches(requested)]
+        for arch in chain:
+            if arch in attempted:
+                continue
+            attempted.add(arch)
+            logging.info(f"🔨 Building {app_name} for {arch} architecture...")
+            try:
+                apk_path = run_build(app_name, source, arch)
+            except downloader.UnknownPatchCompatibilityError:
+                # The patch bundle has nothing for this package; a different
+                # ABI cannot change that, so fail immediately with the clear
+                # "no supported versions" error instead of retrying.
+                raise
+            except Exception as exc:
+                # A failed patch/merge for one ABI should not stop the chain:
+                # the next ABI may download a build the patches do apply to.
+                last_error = exc
+                logging.warning(f"{arch} build for {app_name} failed: {exc}")
+                apk_path = None
+            if apk_path:
+                built_apks.append(apk_path)
+                print(f"✅ Built {arch} version: {Path(apk_path).name}")
+                break
+            further = [a for a in downloader.fallback_arches(arch) if a not in attempted]
+            if further:
+                logging.warning(
+                    f"{arch} build for {app_name} failed; falling back to "
+                    f"{', '.join(further)} (preference: {' -> '.join(downloader.ARCH_PRIORITY)})"
+                )
+    if not built_apks and last_error is not None:
+        raise last_error
     return built_apks
 
 
